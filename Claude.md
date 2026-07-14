@@ -1,154 +1,146 @@
-# CLAUDE.md — Clinical Documentation Assistant (POC)
+# CLAUDE.md — Clinical Diagnostic Decision Support (POC)
 
 ## What this is
 
-A 3-week proof-of-concept for doctors across specialties (initially
-radiologists and general physicians). A doctor inputs clinical text — findings,
-consultation notes, or dictation — and the app drafts the document they need
-(radiology report, consultation/SOAP note, prescription draft, referral letter,
-patient instructions) in that doctor's own template and style. The doctor
-edits the draft and exports it.
+A 3-4 week proof-of-concept for doctors (initially general physicians and
+radiologists). A doctor enters a clinical case — history, symptoms, exam
+findings, lab values, or a written imaging findings description — and the
+system produces a RANKED DIFFERENTIAL with transparent reasoning: why each
+candidate fits, what argues against it, which guideline/literature sources
+support it, and what workup would help discriminate between candidates.
 
-The goal of this POC is NOT technical impressiveness. It is to make real
-doctors say "I'd only change two words" when they see a draft of their own
-case, and agree to use it on real cases for two weeks.
+The doctors evaluating this POC are technically curious and specifically want
+to see HOW it works. The backend pipeline and a visible reasoning trace are
+first-class parts of the product, not internals to hide.
 
-**This tool never diagnoses, never recommends treatment, and never interprets
-medical images.** It only restructures and drafts documents from text the
-doctor provides. Never add image analysis, DICOM viewing, diagnostic
-suggestions, or treatment recommendations — these turn the product into a
-regulated medical device.
+## The regulatory line (non-negotiable, shapes every feature)
 
-## Core design principle: specialties are configuration, not code
+This is decision SUPPORT, not diagnosis. To stay outside medical-device
+territory the system must always:
 
-The app has exactly ONE flow. Specialties differ only in config files.
+1. Output a differential (multiple ranked possibilities), NEVER a single
+   diagnostic verdict.
+2. Show the basis for every suggestion — reasoning, the specific input
+   findings that support it, and citations — so the doctor can independently
+   review and disagree.
+3. Never analyze medical images, waveforms, or signals. Text descriptions of
+   findings written by the doctor are fine; pixels are not. Never add DICOM,
+   image upload for analysis, or ECG/signal processing.
+4. Never output treatment directives or drug dosing. Suggested WORKUP to
+   discriminate the differential is allowed; "give drug X" is not.
+5. Address the doctor, never the patient. No patient-facing output.
+6. Every response carries: "Decision support for licensed clinicians. Not a
+   diagnosis. Clinical judgment required."
 
-- Each doctor has a config: `/config/doctors/<doctor-id>.ts` defining their
-  name, specialty, and which document types they use.
-- Each document type is a prompt pack: `/prompts/<specialty>/<doc-type>/`
-  containing `system.md` (instructions), `template.md` (their exact section
-  structure), and `examples/` (3-4 real anonymized samples as few-shot).
-- Adding a new specialty or doctor = adding config + prompt files. If a new
-  specialty seems to require new application code, STOP and ask the developer.
+If a requested feature would violate any of these, STOP and ask the developer
+instead of building it.
 
-## Hard scope rules (do not violate)
+## Architecture (the backend IS the demo)
 
-This is a POC. Simplicity beats architecture. Specifically:
+A single linear pipeline. No agent frameworks — a pipeline whose steps are
+plain, readable functions is easier to demo, debug, and explain to doctors.
 
-- NEVER add: agents/multi-agent frameworks, vector databases, RAG pipelines,
-  message queues, background workers, EMR/PACS integration, DICOM handling,
-  admin dashboards, user management, or role-based access.
-- NEVER add abstractions "for later" (repositories, service layers, plugin
-  systems). Prefer the simplest working version, even if it looks naive.
-- Auth is a single shared password via middleware. Doctor identity is just a
-  dropdown/URL param selecting their config. Nothing more.
-- One LLM provider, called directly via its official SDK. No LLM gateway,
-  no provider abstraction.
-- If a task seems to require any of the above, STOP and ask the developer.
+    Case input
+      → 1. Case structuring      (LLM: extract findings, history, labs,
+                                   demographics into a typed CaseSummary)
+      → 2. Differential draft    (LLM: candidate conditions, each with
+                                   supporting/contradicting findings from
+                                   the case, ranked)
+      → 3. Evidence retrieval    (PubMed E-utilities + local guidelines
+                                   folder: fetch sources per candidate)
+      → 4. Grounded revision     (LLM: revise/re-rank differential against
+                                   retrieved evidence; attach citations;
+                                   flag candidates with weak evidence)
+      → 5. Discriminating workup (LLM: which findings/tests would best
+                                   separate the top candidates)
+      → Response + full trace
 
-## Stack
+- Backend: FastAPI (Python). Each pipeline step is one pure function in
+  `/backend/pipeline/`, with typed Pydantic models between steps.
+- Every step's inputs, outputs, prompt, latency, and token counts are recorded
+  into a Trace object returned with the response. The frontend renders this
+  as an expandable "How this was generated" panel — this panel is a headline
+  demo feature.
+- Frontend: Next.js single page. Case input, differential display (each
+  candidate expandable: reasoning / for-against findings / citations /
+  suggested workup), trace panel, and a timer.
+- Evidence sources for the POC: PubMed E-utilities API (free) and a
+  `/guidelines/` folder of doctor-supplied guideline PDFs/text, searched with
+  simple keyword + section matching. NO vector database yet — if naive
+  retrieval proves insufficient in eval, ask the developer before adding one.
+- One LLM provider via its official SDK. No gateway, no abstraction layer.
 
-- Next.js 14+ (App Router), single-page UI + API routes. No separate backend.
-- TypeScript. Tailwind for styling. Components in `/app` and `/components`.
-- LLM calls happen ONLY in API routes (server-side), never from the browser.
-  API key lives in `.env.local` and is never committed.
-- No database for the core flow. If persistence is needed for trial logging,
-  use a single SQLite file or Supabase table — nothing more.
-- Speech input: browser Web Speech API first; only fall back to Whisper API
-  if browser STT is unusable for the doctors' accents/languages.
-- Deploy target: Vercel.
+## Hard scope rules
 
-## Core flow (the only flow that matters)
+- NEVER add: multi-agent frameworks, vector DBs (see above), queues,
+  background workers, EMR integration, image/DICOM handling, drug-dosing
+  logic, user management, or admin dashboards.
+- Auth: single shared password. Doctor identity = dropdown/URL param.
+- No database for core flow. Trial logging → single SQLite file.
+- Ask before adding any dependency.
 
-1. Doctor is selected (dropdown or `?dr=` URL param) → loads their config.
-2. Doctor picks a document type from THEIR list (e.g. a radiologist sees
-   "Report"; a GP sees "Consult note", "Prescription", "Patient instructions").
-3. Doctor enters input (textarea or dictation) and, where relevant, optional
-   context — e.g. prior report for radiology, brief patient history for GP.
-4. API route assembles the prompt (system + template + examples + input) and
-   calls the LLM.
-5. UI shows the draft in an editable text area. For radiology with a prior
-   provided, also show a "Changes since prior" section.
-6. Doctor edits, then copies or downloads the final text.
-7. A visible timer shows time from submit to draft (demo metric).
+## Output contract (every differential item)
 
-## Prompt conventions (all specialties)
+    {
+      condition, rank,
+      supporting_findings[],   // verbatim from the doctor's input
+      contradicting_findings[],// verbatim from the doctor's input
+      reasoning,               // 2-4 sentences, plain clinical language
+      citations[],             // {source, title, year, url/id}
+      evidence_strength,       // strong | moderate | weak | none-found
+      discriminating_workup[]
+    }
 
-- All prompt text lives as readable files under `/prompts/`. Never bury
-  prompts inside component code.
-- Every system prompt must instruct the model to:
-  - Follow the template's sections and the doctor's phrasing style exactly.
-  - Use ONLY information present in the doctor's input. Never invent findings,
-    measurements, medications, doses, or history not supported by the input.
-  - Write "[REVIEW: ...]" for any template section the input doesn't cover,
-    rather than guessing.
-  - Never add diagnostic conclusions or treatment suggestions beyond what the
-    doctor stated.
+Rules the prompts must enforce:
+- supporting/contradicting findings must QUOTE the doctor's input. If the
+  model cannot point to input text, the finding doesn't exist.
+- Rare-but-dangerous conditions ("can't-miss" diagnoses) that plausibly fit
+  are always listed in a separate flagged section, even at low probability.
+- If evidence retrieval finds nothing for a candidate, it is labeled
+  "evidence: none-found", never silently kept with fabricated citations.
+- Citations must come from step-3 retrieval results ONLY. The model must
+  never generate a citation from memory — fabricated citations are the #1
+  credibility killer with doctors.
 
-### Specialty-specific notes
+## Evals (the real work)
 
-- **Radiology (report):** support optional prior report input → produce a
-  short "Changes since prior" list (new / resolved / unchanged / progressed).
-  Keep the Impression section concise — verbose impressions are the most
-  common complaint about AI drafts.
-- **General practice (consult note):** default structure is SOAP unless the
-  doctor's template says otherwise. Separate what the patient reported
-  (Subjective) from what the doctor observed (Objective); never move content
-  between them.
-- **General practice (prescription draft):** output ONLY medications, doses,
-  and durations explicitly stated by the doctor, formatted to their
-  prescription layout. If a dose or duration is missing, write "[REVIEW:
-  dose?]" — never fill it in.
-- **Patient instructions:** plain language at a lay reading level. If the
-  doctor's config sets a local language (e.g. Malayalam), produce the
-  instructions in that language with an English copy underneath.
-
-## Evals
-
-- Maintain `/eval/run-eval.ts`: runs the current prompts over all sample cases
-  in `/eval/cases/<specialty>/` and writes outputs next to the doctors'
-  original documents for side-by-side comparison.
-- Run the eval after EVERY prompt change and summarize what changed before
-  considering the task done. Prompt quality is the product; treat the eval
-  like a test suite.
-- Keep per-specialty cases separate so a prompt fix for GPs can't silently
-  degrade radiology output, and vice versa.
+- `/eval/cases/` holds anonymized real cases from the partner doctors, each
+  with the doctor's own final diagnosis recorded as ground truth.
+- `/eval/run-eval.py` runs the full pipeline over all cases and reports:
+  top-1 / top-3 / top-5 hit rate of the ground-truth diagnosis, citation
+  validity (do cited PMIDs exist and match?), and can't-miss coverage.
+- Run after every prompt or pipeline change. Track scores over time in
+  `/eval/history.md`. The demo claim you are building toward is "on your own
+  cases, the correct diagnosis was in the top 3 X% of the time" — that number
+  is the product.
 
 ## Data handling (non-negotiable)
 
-- Only anonymized data enters this system, ever. No patient names, IDs, dates
-  of birth, phone numbers, or addresses in sample data, prompts, logs, or
-  commits.
-- Never log request bodies containing clinical text. Trial logging records
-  only: timestamp, doctor id, document type, input length, draft time, and
-  whether the doctor copied/exported (an event, not the text).
-- Real sample documents in `/eval/cases/` and `/prompts/**/examples/` are
-  gitignored. Provide one fully synthetic example per document type so the
-  structure is clear in the repo.
-- `.env.local`, any `*.key`, and all real sample data are in `.gitignore`.
+- Only anonymized cases, ever. No names, IDs, DOBs, contacts in code, prompts,
+  logs, or commits. Real cases in `/eval/cases/` are gitignored; keep one
+  fully synthetic example case in the repo for structure.
+- Never log case text in production. Log only: timestamp, doctor id, input
+  length, per-step latency, and export events.
+- `.env.local` / `.env`, keys, and real case data are gitignored.
 
 ## Working style
 
-- One feature per session. Build it end-to-end, run it, commit, then move on.
-- Ugly-but-working beats elegant-but-half-done at every decision point.
-- Ask before adding any new dependency. The dependency budget is nearly zero.
-- When in doubt between "flexible" and "simple", choose simple. Flexibility
-  lives in the prompt/config files, never in the code.
+- One pipeline step per session: build it end-to-end with a stub after it,
+  run the eval, commit.
+- Ugly-but-working beats elegant-but-half-done. Flexibility lives in prompt
+  files (`/backend/prompts/`), never in code abstractions.
+- Update "Current status" below at the end of every session.
 
 ## Current status
 
-<!-- Update this section at the end of each working session so the next
-     session starts with context. -->
-- [ ] Core loop: input → LLM → draft (end to end, one hardcoded doctor)
-- [ ] Doctor config loading + document type selection
-- [ ] Prompt packs: radiology report (1 real doctor's template + examples)
-- [ ] Prompt packs: GP consult note (1 real doctor's template + examples)
-- [ ] Editable output + copy/download
-- [ ] Radiology: prior report comparison + "Changes since prior"
-- [ ] GP: prescription draft + patient instructions doc types
-- [ ] Dictation input
-- [ ] Draft timer
-- [ ] Password gate + per-doctor landing page
-- [ ] Eval script over sample cases (per specialty)
-- [ ] Trial logging (events only)
-- [ ] Deployed to Vercel
+- [ ] FastAPI skeleton + Next.js shell talking to it
+- [ ] Step 1: case structuring → CaseSummary model
+- [ ] Step 2: differential draft with for/against findings
+- [ ] Step 3: PubMed retrieval + local guidelines search
+- [ ] Step 4: grounded revision + citations + evidence strength
+- [ ] Step 5: discriminating workup
+- [ ] Trace object through all steps + frontend trace panel
+- [ ] Can't-miss flagged section
+- [ ] Eval harness + first scores on real cases
+- [ ] Password gate, timer, disclaimer footer
+- [ ] Trial logging (events only), deploy
