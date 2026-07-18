@@ -1,146 +1,393 @@
-# CLAUDE.md — Clinical Diagnostic Decision Support (POC)
+CLAUDE.md
 
-## What this is
+Project Name
 
-A 3-4 week proof-of-concept for doctors (initially general physicians and
-radiologists). A doctor enters a clinical case — history, symptoms, exam
-findings, lab values, or a written imaging findings description — and the
-system produces a RANKED DIFFERENTIAL with transparent reasoning: why each
-candidate fits, what argues against it, which guideline/literature sources
-support it, and what workup would help discriminate between candidates.
+Clinical AI Copilot for Diagnostic Assistance
 
-The doctors evaluating this POC are technically curious and specifically want
-to see HOW it works. The backend pipeline and a visible reasoning trace are
-first-class parts of the product, not internals to hide.
+---
 
-## The regulatory line (non-negotiable, shapes every feature)
+Overview
 
-This is decision SUPPORT, not diagnosis. To stay outside medical-device
-territory the system must always:
+This project aims to build an AI-powered clinical assistant that helps doctors collect patient information more efficiently, generate relevant follow-up questions, and provide structured diagnostic support.
 
-1. Output a differential (multiple ranked possibilities), NEVER a single
-   diagnostic verdict.
-2. Show the basis for every suggestion — reasoning, the specific input
-   findings that support it, and citations — so the doctor can independently
-   review and disagree.
-3. Never analyze medical images, waveforms, or signals. Text descriptions of
-   findings written by the doctor are fine; pixels are not. Never add DICOM,
-   image upload for analysis, or ECG/signal processing.
-4. Never output treatment directives or drug dosing. Suggested WORKUP to
-   discriminate the differential is allowed; "give drug X" is not.
-5. Address the doctor, never the patient. No patient-facing output.
-6. Every response carries: "Decision support for licensed clinicians. Not a
-   diagnosis. Clinical judgment required."
+The system is not intended to replace physicians and should always function as a Clinical Decision Support System (CDSS).
 
-If a requested feature would violate any of these, STOP and ask the developer
-instead of building it.
+---
 
-## Architecture (the backend IS the demo)
+Primary Objectives
 
-A single linear pipeline. No agent frameworks — a pipeline whose steps are
-plain, readable functions is easier to demo, debug, and explain to doctors.
+1. Reduce physician documentation burden.
+2. Improve completeness of patient history collection.
+3. Generate adaptive follow-up questions based on symptoms.
+4. Provide structured summaries for clinicians.
+5. Suggest possible differential diagnoses.
+6. Integrate with existing PMS/EHR systems.
 
-    Case input
-      → 1. Case structuring      (LLM: extract findings, history, labs,
-                                   demographics into a typed CaseSummary)
-      → 2. Differential draft    (LLM: candidate conditions, each with
-                                   supporting/contradicting findings from
-                                   the case, ranked)
-      → 3. Evidence retrieval    (PubMed E-utilities + local guidelines
-                                   folder: fetch sources per candidate)
-      → 4. Grounded revision     (LLM: revise/re-rank differential against
-                                   retrieved evidence; attach citations;
-                                   flag candidates with weak evidence)
-      → 5. Discriminating workup (LLM: which findings/tests would best
-                                   separate the top candidates)
-      → Response + full trace
+---
 
-- Backend: FastAPI (Python). Each pipeline step is one pure function in
-  `/backend/pipeline/`, with typed Pydantic models between steps.
-- Every step's inputs, outputs, prompt, latency, and token counts are recorded
-  into a Trace object returned with the response. The frontend renders this
-  as an expandable "How this was generated" panel — this panel is a headline
-  demo feature.
-- Frontend: Next.js single page. Case input, differential display (each
-  candidate expandable: reasoning / for-against findings / citations /
-  suggested workup), trace panel, and a timer.
-- Evidence sources for the POC: PubMed E-utilities API (free) and a
-  `/guidelines/` folder of doctor-supplied guideline PDFs/text, searched with
-  simple keyword + section matching. NO vector database yet — if naive
-  retrieval proves insufficient in eval, ask the developer before adding one.
-- One LLM provider via its official SDK. No gateway, no abstraction layer.
+Core Principles
 
-## Hard scope rules
+Doctor-in-the-loop
 
-- NEVER add: multi-agent frameworks, vector DBs (see above), queues,
-  background workers, EMR integration, image/DICOM handling, drug-dosing
-  logic, user management, or admin dashboards.
-- Auth: single shared password. Doctor identity = dropdown/URL param.
-- No database for core flow. Trial logging → single SQLite file.
-- Ask before adding any dependency.
+The physician always has final authority.
 
-## Output contract (every differential item)
+AI outputs must be presented as:
 
+- Suggestions
+- Possible diagnoses
+- Missing information indicators
+
+Never present AI outputs as definitive medical advice.
+
+---
+
+Safety First
+
+Forbidden Behaviors
+
+The AI must never:
+
+- Make final diagnoses.
+- Prescribe medications autonomously.
+- Recommend emergency actions without physician review.
+- Hide uncertainty.
+- Fabricate patient information.
+
+---
+
+Explainability
+
+Every recommendation should include reasoning.
+
+Example:
+
+{
+  "possible_condition": "Pneumonia",
+  "reasoning": [
+    "Persistent fever",
+    "Productive cough",
+    "Shortness of breath"
+  ]
+}
+
+---
+
+System Workflow
+
+PMS/EHR Data
+        ↓
+Patient Context Builder
+        ↓
+Symptom Collection
+        ↓
+Adaptive Question Generator
+        ↓
+Clinical Summary Generator
+        ↓
+Differential Diagnosis Engine
+        ↓
+Doctor Dashboard
+
+---
+
+Modules
+
+---
+
+1. PMS Integration Module
+
+Responsibilities
+
+- Fetch patient demographics.
+- Retrieve previous diagnoses.
+- Retrieve medications.
+- Retrieve allergies.
+- Retrieve laboratory reports.
+- Retrieve imaging reports.
+- Retrieve visit history.
+
+Preferred Standards
+
+- FHIR
+- HL7
+
+---
+
+2. Patient Context Builder
+
+Inputs
+
+- Age
+- Gender
+- Medical history
+- Family history
+- Current medications
+- Allergies
+- Previous encounters
+
+Output
+
+Structured patient profile.
+
+Example:
+
+{
+  "age": 58,
+  "gender": "Male",
+  "conditions": [
+    "Diabetes",
+    "Hypertension"
+  ],
+  "medications": [
+    "Metformin"
+  ]
+}
+
+---
+
+3. Symptom Intake Module
+
+The patient may provide symptoms through:
+
+- Chat interface
+- Voice interface
+- Doctor input
+- Form input
+
+Example:
+
+"I have chest pain and sweating."
+
+---
+
+4. Adaptive Question Engine
+
+This is the core intelligence component.
+
+The system should generate follow-up questions dynamically.
+
+Example:
+
+Initial Symptom:
+Chest pain
+
+Questions:
+
+- When did the pain start?
+- Is it radiating to the arm?
+- Any shortness of breath?
+- Any nausea?
+- History of heart disease?
+
+Questions should depend on:
+
+- Existing diseases
+- Age
+- Previous history
+- Current symptoms
+
+---
+
+5. Missing Information Detector
+
+Identify clinically important missing information.
+
+Example:
+
+{
+  "missing_information": [
+    "Smoking history",
+    "Drug allergies",
+    "Family history of CAD"
+  ]
+}
+
+---
+
+6. Clinical Summary Generator
+
+Generate structured notes.
+
+SOAP Format
+
+Subjective
+
+Patient complaints.
+
+Objective
+
+Vitals, labs, imaging.
+
+Assessment
+
+Possible conditions.
+
+Plan
+
+Physician review required.
+
+---
+
+7. Differential Diagnosis Engine
+
+Provide ranked possibilities.
+
+Example:
+
+{
+  "differential_diagnosis": [
     {
-      condition, rank,
-      supporting_findings[],   // verbatim from the doctor's input
-      contradicting_findings[],// verbatim from the doctor's input
-      reasoning,               // 2-4 sentences, plain clinical language
-      citations[],             // {source, title, year, url/id}
-      evidence_strength,       // strong | moderate | weak | none-found
-      discriminating_workup[]
+      "condition": "Acute Coronary Syndrome",
+      "confidence": 0.72
+    },
+    {
+      "condition": "GERD",
+      "confidence": 0.18
     }
+  ]
+}
 
-Rules the prompts must enforce:
-- supporting/contradicting findings must QUOTE the doctor's input. If the
-  model cannot point to input text, the finding doesn't exist.
-- Rare-but-dangerous conditions ("can't-miss" diagnoses) that plausibly fit
-  are always listed in a separate flagged section, even at low probability.
-- If evidence retrieval finds nothing for a candidate, it is labeled
-  "evidence: none-found", never silently kept with fabricated citations.
-- Citations must come from step-3 retrieval results ONLY. The model must
-  never generate a citation from memory — fabricated citations are the #1
-  credibility killer with doctors.
+---
 
-## Evals (the real work)
+AI Architecture
 
-- `/eval/cases/` holds anonymized real cases from the partner doctors, each
-  with the doctor's own final diagnosis recorded as ground truth.
-- `/eval/run-eval.py` runs the full pipeline over all cases and reports:
-  top-1 / top-3 / top-5 hit rate of the ground-truth diagnosis, citation
-  validity (do cited PMIDs exist and match?), and can't-miss coverage.
-- Run after every prompt or pipeline change. Track scores over time in
-  `/eval/history.md`. The demo claim you are building toward is "on your own
-  cases, the correct diagnosis was in the top 3 X% of the time" — that number
-  is the product.
+Agent 1
 
-## Data handling (non-negotiable)
+Patient Context Agent
 
-- Only anonymized cases, ever. No names, IDs, DOBs, contacts in code, prompts,
-  logs, or commits. Real cases in `/eval/cases/` are gitignored; keep one
-  fully synthetic example case in the repo for structure.
-- Never log case text in production. Log only: timestamp, doctor id, input
-  length, per-step latency, and export events.
-- `.env.local` / `.env`, keys, and real case data are gitignored.
+Agent 2
 
-## Working style
+Symptom Understanding Agent
 
-- One pipeline step per session: build it end-to-end with a stub after it,
-  run the eval, commit.
-- Ugly-but-working beats elegant-but-half-done. Flexibility lives in prompt
-  files (`/backend/prompts/`), never in code abstractions.
-- Update "Current status" below at the end of every session.
+Agent 3
 
-## Current status
+Question Generation Agent
 
-- [ ] FastAPI skeleton + Next.js shell talking to it
-- [ ] Step 1: case structuring → CaseSummary model
-- [ ] Step 2: differential draft with for/against findings
-- [ ] Step 3: PubMed retrieval + local guidelines search
-- [ ] Step 4: grounded revision + citations + evidence strength
-- [ ] Step 5: discriminating workup
-- [ ] Trace object through all steps + frontend trace panel
-- [ ] Can't-miss flagged section
-- [ ] Eval harness + first scores on real cases
-- [ ] Password gate, timer, disclaimer footer
-- [ ] Trial logging (events only), deploy
+Agent 4
+
+Clinical Reasoning Agent
+
+Agent 5
+
+Summary Generation Agent
+
+---
+
+Suggested Tech Stack
+
+Backend
+
+- FastAPI
+- PostgreSQL
+- Redis
+- Celery
+
+AI
+
+- GPT-5 / Claude / Gemini
+- MedGemma
+- Meditron
+- BioMistral
+
+Embeddings
+
+- BioClinicalBERT
+- Instructor-xl
+- MedCPT
+
+Vector Database
+
+- Qdrant
+- pgvector
+
+---
+
+Knowledge Sources
+
+Potential retrieval sources:
+
+- SNOMED CT
+- ICD-10
+- MeSH
+- PubMed
+- Clinical Practice Guidelines
+- WHO guidelines
+- NICE guidelines
+
+---
+
+Prompting Rules
+
+The AI should:
+
+1. Ask concise questions.
+2. Avoid unnecessary questions.
+3. Prioritize life-threatening conditions.
+4. Explain uncertainty.
+5. Generate structured outputs.
+
+---
+
+Emergency Escalation Rules
+
+If symptoms indicate possible emergencies:
+
+Examples:
+
+- Stroke
+- Myocardial infarction
+- Sepsis
+- Severe respiratory distress
+
+The system should:
+
+Flag as High Priority
+Recommend immediate physician review
+Do not provide independent recommendations
+
+---
+
+Security Requirements
+
+- HIPAA compliant architecture.
+- Encryption at rest.
+- Encryption in transit.
+- Audit logs.
+- Role-based access control.
+- PII minimization.
+
+---
+
+Non-Goals
+
+This project does NOT aim to:
+
+- Replace doctors.
+- Provide autonomous treatment.
+- Provide direct patient diagnosis.
+- Operate without physician oversight.
+
+---
+
+Future Features
+
+Phase 2
+
+- Voice consultation support.
+- Multimodal analysis.
+- Lab interpretation.
+- Radiology report understanding.
+- Longitudinal patient monitoring.
+
+Phase 3
+
+- AI-assisted triage.
+- Predictive risk scoring.
+- Population analytics.
+- Clinical outcome prediction.
+
+---
+
+Vision
+
+Create an AI Clinical Copilot that enables physicians to spend less time on documentation and more time treating patients while improving completeness and quality of clinical decision making.
