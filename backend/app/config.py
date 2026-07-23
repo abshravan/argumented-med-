@@ -29,7 +29,8 @@ class Settings:
     openrouter_app_name: str = os.getenv("OPENROUTER_APP_NAME", "MediAssist Clinical Workspace")
 
     temperature: float = float(os.getenv("TEMPERATURE", "0.2"))
-    max_output_tokens: int = int(os.getenv("MAX_OUTPUT_TOKENS", "2048"))
+    # One call returns narrative + the full insights JSON, so this needs headroom.
+    max_output_tokens: int = int(os.getenv("MAX_OUTPUT_TOKENS", "3500"))
 
     host: str = os.getenv("HOST", "0.0.0.0")
     port: int = int(os.getenv("PORT", "8000"))

@@ -41,15 +41,19 @@ back to demo scenarios automatically and tells you so.
 
 ## Backend architecture
 
-FastAPI + LangGraph. `intake` extracts the patient, `assess` writes the streamed narrative,
-then five nodes fan out **in parallel** to fill the insights panel:
+FastAPI + LangGraph, **one LLM request per chat message** (important for free-tier rate
+limits):
 
 ```
-START → intake → assess ─┬→ diagnose · workup · followups · documentation · evidence → END
+START → consult → parse → END
 ```
 
-Streaming is SSE: `token` frames carry the assessment text, `insight` frames carry each
-card's structured payload as its node completes. Provider/model/temperature are sent per
+`consult` makes the single streamed call; the model returns the markdown assessment, then a
+`---INSIGHTS---` delimiter, then one JSON object with every insight card. `parse` is pure
+Python — it splits and validates, dropping malformed sections rather than failing.
+
+Streaming is SSE: `token` frames carry the narrative (the JSON tail is suppressed), and
+`insight` frames replay the cards group by group. Provider/model/temperature are sent per
 request from Settings, so you can switch Gemini ↔ OpenRouter without restarting.
 
 ## Layout

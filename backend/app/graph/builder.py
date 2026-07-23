@@ -1,14 +1,13 @@
 """Graph wiring.
 
-    START → intake → assess ─┬→ diagnose ──────┐
-                             ├→ workup         │
-                             ├→ followups      ├→ END
-                             ├→ documentation  │
-                             └→ evidence ──────┘
+    START → consult → parse → END
 
-`intake` establishes the patient context, `assess` writes the narrative answer that gets
-streamed into the conversation, and the five downstream nodes fan out in parallel to fill
-the AI Clinical Insights panel. They write disjoint state keys, so no reducer is needed.
+`consult` is the ONLY node that talks to the model — exactly one LLM request per
+chat message. `parse` is pure Python: it splits that single response into the
+narrative answer and the structured insight cards.
+
+(An earlier version fanned out to five parallel LLM nodes. That produced 7+ requests
+per message and tripped provider rate limits, so the work was folded into one call.)
 """
 
 from __future__ import annotations
@@ -20,26 +19,19 @@ from langgraph.graph import END, START, StateGraph
 from . import nodes
 from .state import ClinicalState
 
-FANOUT = ["diagnose", "workup", "followups", "documentation", "evidence"]
+#: Node whose streamed tokens are forwarded to the client.
+STREAMING_NODE = "consult"
 
 
 def build_graph():
     builder = StateGraph(ClinicalState)
 
-    builder.add_node("intake", nodes.intake)
-    builder.add_node("assess", nodes.assess)
-    builder.add_node("diagnose", nodes.diagnose)
-    builder.add_node("workup", nodes.workup)
-    builder.add_node("followups", nodes.followups)
-    builder.add_node("documentation", nodes.documentation)
-    builder.add_node("evidence", nodes.evidence)
+    builder.add_node("consult", nodes.consult)
+    builder.add_node("parse", nodes.parse)
 
-    builder.add_edge(START, "intake")
-    builder.add_edge("intake", "assess")
-
-    for node in FANOUT:
-        builder.add_edge("assess", node)
-        builder.add_edge(node, END)
+    builder.add_edge(START, "consult")
+    builder.add_edge("consult", "parse")
+    builder.add_edge("parse", END)
 
     return builder.compile()
 

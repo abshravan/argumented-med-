@@ -11,8 +11,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+import asyncio
+
 from .config import get_settings
 from .graph import get_graph
+from .graph.builder import STREAMING_NODE
+from .graph.prompts import DELIMITER
 from .llm import ProviderError, build_llm
 from .schemas import ConsultRequest, HealthResponse
 
@@ -35,15 +39,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Which node fills which slice of the insights panel.
-NODE_KEYS = {
-    "intake": ["patient"],
-    "diagnose": ["diagnosis", "differentials"],
-    "workup": ["investigations", "redFlags"],
-    "followups": ["followUps"],
-    "documentation": ["soap"],
-    "evidence": ["references"],
-}
+# The parse node returns everything at once; these groups are replayed to the client
+# as separate `insight` frames so the panel still reveals card by card.
+INSIGHT_GROUPS: list[tuple[str, list[str]]] = [
+    ("intake", ["patient"]),
+    ("diagnose", ["diagnosis", "differentials"]),
+    ("workup", ["investigations", "redFlags"]),
+    ("followups", ["followUps"]),
+    ("documentation", ["soap"]),
+    ("evidence", ["references"]),
+]
 
 
 def _jsonable(value: Any) -> Any:
@@ -138,6 +143,13 @@ async def consult_stream(req: ConsultRequest) -> StreamingResponse:
 
     async def generator() -> AsyncIterator[str]:
         graph = get_graph()
+        # The single response is "narrative ---INSIGHTS--- {json}". We stream the
+        # narrative and must never leak the JSON tail into the conversation, so we
+        # buffer and hold back anything that could be the start of the delimiter.
+        buffer = ""
+        emitted = 0
+        narrative_done = False
+
         try:
             yield _sse("start", {"provider": req.provider or settings.provider})
 
@@ -146,29 +158,51 @@ async def consult_stream(req: ConsultRequest) -> StreamingResponse:
             ):
                 if mode == "messages":
                     message, meta = chunk
-                    # Only the narrative node is echoed into the conversation.
-                    if meta.get("langgraph_node") != "assess":
+                    if meta.get("langgraph_node") != STREAMING_NODE or narrative_done:
                         continue
+
                     text = message.content
                     if isinstance(text, list):  # some providers chunk as content blocks
                         text = "".join(
                             part.get("text", "") if isinstance(part, dict) else str(part)
                             for part in text
                         )
-                    if text:
-                        yield _sse("token", {"text": text})
+                    if not text:
+                        continue
+
+                    buffer += text
+                    cut = buffer.find(DELIMITER)
+                    if cut != -1:
+                        if cut > emitted:
+                            yield _sse("token", {"text": buffer[emitted:cut]})
+                        emitted = cut
+                        narrative_done = True
+                        continue
+
+                    # Hold back the last len(DELIMITER)-1 chars: they might be a
+                    # partial delimiter that completes on the next chunk.
+                    safe = max(emitted, len(buffer) - len(DELIMITER) + 1)
+                    if safe > emitted:
+                        yield _sse("token", {"text": buffer[emitted:safe]})
+                        emitted = safe
 
                 elif mode == "updates":
-                    for node, update in (chunk or {}).items():
-                        if not isinstance(update, dict):
-                            continue
+                    update = (chunk or {}).get("parse")
+                    if not isinstance(update, dict):
+                        continue
+                    for node, keys in INSIGHT_GROUPS:
                         payload = {
-                            key: _jsonable(update[key])
-                            for key in NODE_KEYS.get(node, [])
-                            if key in update
+                            key: _jsonable(update[key]) for key in keys if key in update
                         }
                         if payload:
                             yield _sse("insight", {"node": node, "data": payload})
+                            # Tiny gap so the panel animates card by card. No extra cost.
+                            await asyncio.sleep(0.12)
+
+            # No delimiter arrived (model ignored the format) — flush what's left so
+            # the clinician still sees the answer.
+            if not narrative_done and len(buffer) > emitted:
+                yield _sse("token", {"text": buffer[emitted:]})
 
             yield _sse("done", {})
 
@@ -191,7 +225,7 @@ async def consult_stream(req: ConsultRequest) -> StreamingResponse:
 
 @app.post("/api/consult")
 async def consult(req: ConsultRequest) -> dict:
-    """Non-streaming equivalent — returns the assessment and the full insights object."""
+    """Non-streaming equivalent. Also exactly one LLM request."""
     transcript, latest = _transcript(req)
     if not latest:
         raise HTTPException(status_code=400, detail="No clinician message to respond to.")

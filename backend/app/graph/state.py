@@ -30,6 +30,9 @@ class ClinicalState(TypedDict, total=False):
     temperature: Optional[float]
 
     # --- node outputs ---
+    raw: str
+    """The complete single-call response: narrative + delimiter + insights JSON."""
+
     patient: PatientSummary
     assessment: str
     """The narrative markdown answer streamed into the conversation."""

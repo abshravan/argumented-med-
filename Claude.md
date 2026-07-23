@@ -13,13 +13,16 @@ then `uvicorn app.main:app --reload --port 8000`. See `backend/README.md`.
 ## Backend (Python · FastAPI · LangGraph)
 - Providers: **Gemini** (`langchain-google-genai`) and **OpenRouter** (`langchain-openai`
   against the OpenAI-compatible endpoint). Chosen per-request from the Settings tab.
-- Graph: `START → intake → assess → {diagnose, workup, followups, documentation, evidence} → END`.
-  The fan-out nodes run in parallel and write disjoint state keys (no reducer needed).
-- `app/graph/prompts.py` holds the clinical guardrails — keep them on every node.
-- `app/llm.py::structured()` tries native structured output, falls back to prompted JSON
-  (OpenRouter tool-calling support varies by model).
-- SSE from `/api/consult/stream`: `token` frames = assessment text (only from the `assess`
-  node), `insight` frames = one card's structured payload per finished node.
+- Graph: `START → consult → parse → END`. **`consult` is the only LLM call — keep it that
+  way.** One request per chat message; the previous 7-call fan-out hit provider rate limits.
+- The model returns `markdown ---INSIGHTS--- {json}` in one response. `parse` (pure Python)
+  splits it and validates each section independently, dropping bad ones.
+- `app/graph/prompts.py` holds the clinical guardrails + the response-format contract.
+- SSE from `/api/consult/stream`: `token` frames = narrative only (main.py buffers and
+  suppresses the JSON tail, holding back partial delimiters), `insight` frames replay the
+  card groups with a small gap for the staged reveal.
+- Frontend also guards concurrency: `dispatch`/`regenerate` bail when `streaming`, and the
+  composer/follow-up buttons lock during a request.
 
 ## Architecture
 - Routes: `/login`, `/signup`, `/onboarding`, `/` (workspace, client-side guarded).

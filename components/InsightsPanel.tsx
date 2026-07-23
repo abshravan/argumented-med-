@@ -309,6 +309,7 @@ export default function InsightsPanel({
               <button
                 key={i}
                 onClick={() => onAskFollowUp(q)}
+                disabled={streaming}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -321,10 +322,12 @@ export default function InsightsPanel({
                   border: "1px solid var(--border)",
                   color: "var(--text-soft)",
                   fontSize: 12.5,
-                  cursor: "pointer",
+                  cursor: streaming ? "default" : "pointer",
+                  opacity: streaming ? 0.55 : 1,
                   transition: "all 0.14s var(--ease)",
                 }}
                 onMouseEnter={(e) => {
+                  if (streaming) return;
                   e.currentTarget.style.borderColor = "rgba(56,189,248,0.35)";
                   e.currentTarget.style.color = "var(--text-bright)";
                 }}

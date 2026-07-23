@@ -40,9 +40,13 @@ export default function Composer({
     onDraftChange?.(value);
   }, [value, onDraftChange]);
 
+  // A request is in flight while `streaming` — block further sends so we never
+  // issue more than one LLM call per chat turn.
+  const locked = disabled || streaming;
+
   const submit = () => {
     const t = value.trim();
-    if (!t || disabled) return;
+    if (!t || locked) return;
     onSend(t);
     setValue("");
     if (ref.current) ref.current.style.height = "auto";
@@ -63,7 +67,7 @@ export default function Composer({
           <button
             key={s}
             onClick={() => onSend(s)}
-            disabled={disabled}
+            disabled={locked}
             style={{
               fontSize: 12,
               fontWeight: 600,
@@ -72,12 +76,12 @@ export default function Composer({
               border: "1px solid var(--border)",
               borderRadius: 20,
               padding: "6px 13px",
-              cursor: disabled ? "default" : "pointer",
-              opacity: disabled ? 0.5 : 1,
+              cursor: locked ? "default" : "pointer",
+              opacity: locked ? 0.5 : 1,
               transition: "all 0.14s var(--ease)",
             }}
             onMouseEnter={(e) => {
-              if (disabled) return;
+              if (locked) return;
               e.currentTarget.style.borderColor = "rgba(45,212,191,0.35)";
               e.currentTarget.style.color = "var(--teal-bright)";
             }}
@@ -184,21 +188,21 @@ export default function Composer({
             )}
             <button
               onClick={submit}
-              disabled={!value.trim() || disabled}
+              disabled={!value.trim() || locked}
               title="Send"
               style={{
                 width: 38,
                 height: 38,
                 borderRadius: 11,
                 border: "none",
-                cursor: value.trim() && !disabled ? "pointer" : "default",
-                background: value.trim() && !disabled ? "linear-gradient(135deg,#34d399,#10b981)" : "var(--card-2)",
-                color: value.trim() && !disabled ? "#062018" : "var(--text-faint)",
+                cursor: value.trim() && !locked ? "pointer" : "default",
+                background: value.trim() && !locked ? "linear-gradient(135deg,#34d399,#10b981)" : "var(--card-2)",
+                color: value.trim() && !locked ? "#062018" : "var(--text-faint)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 transition: "all 0.15s var(--ease)",
-                boxShadow: value.trim() && !disabled ? "0 6px 18px rgba(16,185,129,0.28)" : "none",
+                boxShadow: value.trim() && !locked ? "0 6px 18px rgba(16,185,129,0.28)" : "none",
               }}
             >
               <ArrowUp size={18} strokeWidth={2.4} />

@@ -31,21 +31,33 @@ uvicorn app.main:app --reload --port 8000
 
 Docs at http://localhost:8000/docs · health at http://localhost:8000/api/health
 
-## The graph
+## The graph — one LLM request per message
 
 ```
-START → intake → assess ─┬→ diagnose        (diagnosis + ranked differentials)
-                         ├→ workup          (investigations + red flags)
-                         ├→ followups       (questions to ask the patient)
-                         ├→ documentation   (SOAP note)
-                         └→ evidence        (guidelines & references)
-                                            → END
+START → consult → parse → END
 ```
 
-- `intake` extracts the structured patient summary from free text.
-- `assess` writes the markdown answer — **its tokens are what stream into the conversation**.
-- The five downstream nodes fan out **in parallel** to fill the AI Clinical Insights panel.
-  They write disjoint state keys, so no reducer is required.
+- **`consult`** is the only node that talks to the model — **exactly one request per chat
+  message**. It streams a response shaped as:
+
+  ```
+  ## Working assessment
+  ...markdown for the clinician...
+  ---INSIGHTS---
+  { "patient": {...}, "diagnosis": {...}, "differentials": [...], ... }
+  ```
+
+- **`parse`** is pure Python (no LLM): it splits on the delimiter, validates each section
+  independently, and returns the insight cards. A malformed section is dropped rather than
+  failing the whole response; if the delimiter never appears, the narrative is still shown.
+
+The SSE layer buffers tokens and holds back anything that could be a partial delimiter, so
+the raw JSON never leaks into the conversation. Insight frames are then replayed group by
+group with a ~120 ms gap so the panel still animates card by card — at no extra API cost.
+
+> An earlier version fanned out to five parallel LLM nodes plus `intake` and `assess`.
+> That was **7+ requests per message** (more when structured-output fell back) and tripped
+> free-tier rate limits, so it was folded into a single call.
 
 ## Endpoints
 

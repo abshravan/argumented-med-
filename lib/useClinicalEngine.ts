@@ -319,6 +319,10 @@ export function useClinicalEngine() {
   // =======================================================================
   const dispatch = useCallback(
     (query: string, isFirst: boolean) => {
+      // One in-flight request at a time. Without this, a double-click or a fast
+      // follow-up fires a second LLM call and burns through rate limits.
+      if (stateRef.current.streaming) return;
+
       clearTimers();
       const settings = loadSettings();
       const useBackend = settings.useBackend;
@@ -395,6 +399,7 @@ export function useClinicalEngine() {
 
   const regenerate = useCallback(
     (messageId: string) => {
+      if (stateRef.current.streaming) return; // don't stack requests
       const idx = state.messages.findIndex((m) => m.id === messageId);
       if (idx <= 0) return;
       const prompt = [...state.messages.slice(0, idx)].reverse().find((m) => m.role === "doctor");
