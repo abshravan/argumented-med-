@@ -1,0 +1,266 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tokens consumed by Magic UI components (bg-background / text-foreground /
+   border / bg-border). Mapped onto the MediAssist palette. */
+:root {
+  --background: #0d131d;
+  --foreground: #e8edf4;
+}
+:root[data-theme="light"] {
+  --background: #ffffff;
+  --foreground: #16202e;
+}
+
+:root {
+  /* ---- Surfaces (from MediAssist theme) ---- */
+  --bg: #080b11;
+  --bg-2: #0a0e15;
+  --panel: #0a0e15;
+  --card: #0d131d;
+  --card-2: #111a27;
+  --card-hover: #101826;
+  --border: rgba(148, 163, 184, 0.10);
+  --border-strong: rgba(148, 163, 184, 0.16);
+  --border-faint: rgba(148, 163, 184, 0.07);
+
+  /* ---- Text ---- */
+  --text: #e8edf4;
+  --text-bright: #f1f5f9;
+  --text-soft: #c3cddb;
+  --text-muted: #94a3b8;
+  --text-dim: #7c8aa0;
+  --text-faint: #5b6577;
+
+  /* ---- Accents ---- */
+  --primary: #2563eb;        /* medical blue - actions */
+  --primary-soft: #5b9bff;
+  --teal: #34d399;           /* AI / success */
+  --teal-2: #10b981;
+  --teal-bright: #5eead4;
+  --cyan: #22d3ee;
+  --purple: #8b5cf6;         /* diagnosis / confidence */
+  --purple-light: #b794f6;
+  --purple-lighter: #c4b5fd;
+  --amber: #f59e0b;
+  --amber-light: #fbbf24;
+  --amber-soft: #fcd34d;
+  --red: #ef4444;
+  --red-light: #f87171;
+  --red-soft: #fca5a5;
+  --blue-soft: #93c5fd;
+
+  --radius: 16px;
+  --radius-sm: 10px;
+  --radius-lg: 20px;
+
+  --sidebar-w: 232px;
+  --sidebar-w-collapsed: 68px;
+  --insights-w: 30%;
+
+  --shadow-card: 0 1px 0 rgba(255,255,255,0.02) inset, 0 8px 24px -18px rgba(0,0,0,0.9);
+  --shadow-pop: 0 18px 48px -22px rgba(0,0,0,0.85);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Light theme (theme toggle) — kept subtle & clinical */
+:root[data-theme="light"] {
+  --bg: #eef2f7;
+  --bg-2: #e7ecf3;
+  --panel: #f4f7fb;
+  --card: #ffffff;
+  --card-2: #f6f9fc;
+  --card-hover: #f0f4f9;
+  --border: rgba(15, 23, 42, 0.09);
+  --border-strong: rgba(15, 23, 42, 0.14);
+  --border-faint: rgba(15, 23, 42, 0.05);
+  --text: #16202e;
+  --text-bright: #0b1220;
+  --text-soft: #24314a;
+  --text-muted: #4a5a70;
+  --text-dim: #64748b;
+  --text-faint: #8a97a8;
+  --shadow-card: 0 1px 2px rgba(15,23,42,0.05), 0 10px 26px -20px rgba(15,23,42,0.35);
+  --shadow-pop: 0 18px 48px -22px rgba(15,23,42,0.28);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-inter), system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+}
+
+a { color: var(--primary-soft); text-decoration: none; }
+
+button { font-family: inherit; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.28); background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+input, textarea { font-family: inherit; }
+input:focus, textarea:focus { outline: none; }
+
+::selection { background: rgba(52, 211, 153, 0.28); color: var(--text-bright); }
+
+/* ============ App shell ============ */
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--insights-w);
+  height: 100vh;
+  width: 100vw;
+  background:
+    radial-gradient(120% 80% at 12% -5%, rgba(45, 212, 191, 0.06), transparent 55%),
+    radial-gradient(90% 70% at 100% 100%, rgba(139, 92, 246, 0.07), transparent 55%),
+    var(--bg);
+  transition: grid-template-columns 0.32s var(--ease);
+}
+.app.collapsed { --sidebar-w: var(--sidebar-w-collapsed); }
+.app.insights-hidden { --insights-w: 0px; }
+
+@media (max-width: 1280px) {
+  .app:not(.insights-hidden) { --insights-w: 340px; }
+}
+@media (max-width: 1024px) {
+  .app:not(.insights-hidden) { --insights-w: 300px; }
+}
+
+/* ============ Generic card ============ */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 7px;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s, transform 0.08s;
+}
+.icon-btn:hover { color: var(--text-bright); background: rgba(148,163,184,0.08); border-color: var(--border-strong); }
+.icon-btn:active { transform: scale(0.94); }
+
+/* ============ Animations ============ */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes growBar { from { width: 0 !important; } }
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes typingDot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+@keyframes pulseRing {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45); }
+  70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+@keyframes caret { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+.enter { animation: fadeUp 0.4s var(--ease) both; }
+.enter-fade { animation: fadeIn 0.4s var(--ease) both; }
+
+.skeleton {
+  background: linear-gradient(90deg, rgba(148,163,184,0.06) 25%, rgba(148,163,184,0.14) 37%, rgba(148,163,184,0.06) 63%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+  border-radius: 6px;
+}
+
+/* Confidence / progress bars */
+.bar-track {
+  height: 8px;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.12);
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.9s var(--ease);
+  animation: growBar 0.9s var(--ease);
+}
+
+/* Typing indicator */
+.typing { display: inline-flex; gap: 4px; align-items: center; }
+.typing span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--teal-bright);
+  animation: typingDot 1.2s infinite ease-in-out;
+}
+.typing span:nth-child(2) { animation-delay: 0.15s; }
+.typing span:nth-child(3) { animation-delay: 0.3s; }
+
+.stream-caret {
+  display: inline-block;
+  width: 7px; height: 15px;
+  vertical-align: text-bottom;
+  margin-left: 2px;
+  background: var(--teal-bright);
+  animation: caret 0.9s steps(1) infinite;
+  border-radius: 1px;
+}
+
+/* Focus ring for accessibility */
+:focus-visible {
+  outline: 2px solid var(--teal-bright);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
