@@ -6,12 +6,28 @@ dark navy `#080b11`, `#0d131d` cards, teal/green AI accent, purple confidence, b
 Frontend animated with **Magic UI** components (vendored in `components/magicui/`, built on `motion`).
 
 ## Run
-`npm install` then `npm run dev` → http://localhost:3000 (Node 18.17+).
+Frontend: `npm install` then `npm run dev` → http://localhost:3000 (Node 18.17+).
+Backend: `cd backend`, venv, `pip install -r requirements.txt`, `.env` from `.env.example`,
+then `uvicorn app.main:app --reload --port 8000`. See `backend/README.md`.
+
+## Backend (Python · FastAPI · LangGraph)
+- Providers: **Gemini** (`langchain-google-genai`) and **OpenRouter** (`langchain-openai`
+  against the OpenAI-compatible endpoint). Chosen per-request from the Settings tab.
+- Graph: `START → intake → assess → {diagnose, workup, followups, documentation, evidence} → END`.
+  The fan-out nodes run in parallel and write disjoint state keys (no reducer needed).
+- `app/graph/prompts.py` holds the clinical guardrails — keep them on every node.
+- `app/llm.py::structured()` tries native structured output, falls back to prompted JSON
+  (OpenRouter tool-calling support varies by model).
+- SSE from `/api/consult/stream`: `token` frames = assessment text (only from the `assess`
+  node), `insight` frames = one card's structured payload per finished node.
 
 ## Architecture
 - Three-column shell in `app/page.tsx`: Sidebar · Clinical Workspace · AI Clinical Insights.
-- `lib/useClinicalEngine.ts` — client hook; the mock "living" engine (streaming text, staged
-  insight reveals, confidence animation, differential re-ranking, live draft nudges).
+- `lib/useClinicalEngine.ts` — client hook with two paths: **backend** (SSE from FastAPI) and
+  **demo** (seeded scenarios). Falls back to demo automatically if the backend is unreachable.
+- `lib/api.ts` (SSE client), `lib/settings.ts` (provider/model, localStorage),
+  `lib/store.ts` (consultation records → History / Saved / Favorites).
+- `components/views/` — ConsultationListView (history + saved), FavoritesView, SettingsView.
 - `lib/scenarios.ts` — seeded clinical scenarios keyed by symptom keywords + empty-state starters.
 - `lib/types.ts` — typed clinical models (Patient, Diagnosis, Differential, Insights, SOAP, …).
 - `components/` — Sidebar, PatientHeader (sticky), MessageCard (notebook cards + toolbar + edit),

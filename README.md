@@ -17,14 +17,40 @@ Vendored under `components/magicui/` (MIT):
 
 ## Run
 
+**Frontend** (works on its own with seeded demo cases):
+
 ```bash
 npm install
 npm run dev
 ```
 
-Open http://localhost:3000.
+Open http://localhost:3000. Requires Node.js 18.17+.
 
-> Requires Node.js 18.17+ (Next.js 14). If `node`/`npm` aren't found, install Node LTS from https://nodejs.org first.
+**Backend** (LangGraph + Gemini / OpenRouter) — see [backend/README.md](backend/README.md):
+
+```bash
+cd backend
+python -m venv .venv && source .venv/Scripts/activate   # Windows Git Bash
+pip install -r requirements.txt
+cp .env.example .env      # add GOOGLE_API_KEY or OPENROUTER_API_KEY
+uvicorn app.main:app --reload --port 8000
+```
+
+Then pick your provider in the **Settings** tab. With no backend running the workspace falls
+back to demo scenarios automatically and tells you so.
+
+## Backend architecture
+
+FastAPI + LangGraph. `intake` extracts the patient, `assess` writes the streamed narrative,
+then five nodes fan out **in parallel** to fill the insights panel:
+
+```
+START → intake → assess ─┬→ diagnose · workup · followups · documentation · evidence → END
+```
+
+Streaming is SSE: `token` frames carry the assessment text, `insight` frames carry each
+card's structured payload as its node completes. Provider/model/temperature are sent per
+request from Settings, so you can switch Gemini ↔ OpenRouter without restarting.
 
 ## Layout
 
@@ -66,6 +92,21 @@ lib/
   types.ts  scenarios.ts  useClinicalEngine.ts   # mock "living" engine
 design-source/       # the imported MediAssist.dc.html theme reference
 ```
+
+## Sidebar tabs
+
+All five are functional and backed by browser-local storage (nothing is uploaded):
+
+| Tab | What it does |
+| --- | --- |
+| **New Consultation** | The three-column workspace. Resets to the empty state. |
+| **Consultation History** | Every consultation, searchable; open, star, or delete. |
+| **Saved Cases** | The starred subset, for teaching / audit / follow-up. |
+| **Favorites** | Every bookmarked message across all consultations; jumps back to its case. |
+| **Settings** | Provider (Gemini/OpenRouter), model, temperature, backend URL, **Test connection**, theme, and clear-data. |
+
+Consultations are recorded automatically as you work, and re-open with their full message
+history and insight cards intact.
 
 ## Keyboard shortcuts
 

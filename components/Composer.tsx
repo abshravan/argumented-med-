@@ -16,11 +16,13 @@ export default function Composer({
   onDraftChange,
   disabled,
   streaming,
+  onStop,
 }: {
   onSend: (text: string) => void;
   onDraftChange?: (text: string) => void;
   disabled?: boolean;
   streaming?: boolean;
+  onStop?: () => void;
 }) {
   const [value, setValue] = useState("");
   const [recording, setRecording] = useState(false);
@@ -158,6 +160,28 @@ export default function Composer({
             <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
               {streaming ? "AI is responding…" : "⏎ to send · ⇧⏎ new line"}
             </span>
+            {streaming && onStop && (
+              <button
+                onClick={onStop}
+                title="Stop generating"
+                style={{
+                  height: 30,
+                  padding: "0 12px",
+                  borderRadius: 9,
+                  border: "1px solid var(--border-strong)",
+                  background: "var(--card-2)",
+                  color: "var(--text-soft)",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <Square size={11} fill="currentColor" /> Stop
+              </button>
+            )}
             <button
               onClick={submit}
               disabled={!value.trim() || disabled}

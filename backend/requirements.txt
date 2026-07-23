@@ -1,0 +1,12 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.8.0
+python-dotenv>=1.0.1
+
+# LangGraph + LangChain core
+langgraph>=0.2.60
+langchain-core>=0.3.25
+
+# Providers
+langchain-google-genai>=2.0.7      # Gemini
+langchain-openai>=0.2.14           # OpenRouter (OpenAI-compatible endpoint)
