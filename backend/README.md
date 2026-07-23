@@ -64,6 +64,7 @@ group with a ~120 ms gap so the panel still animates card by card — at no extr
 | Method | Path                   | Purpose |
 | ------ | ---------------------- | ------- |
 | GET    | `/api/health`          | Status, default provider, which providers have keys |
+| GET    | `/api/models?provider=` | Models your key can actually use — use this to check a model id |
 | POST   | `/api/consult/stream`  | SSE: `start` → `token`* → `insight`* → `done` (or `error`) |
 | POST   | `/api/consult`         | Non-streaming; returns assessment + full insights object |
 
@@ -74,6 +75,27 @@ event: token    data: {"text": "..."}                       # assessment tokens
 event: insight  data: {"node": "diagnose", "data": {...}}    # one card's worth of state
 event: error    data: {"message": "..."}
 event: done     data: {}
+```
+
+## When the provider fails
+
+Google returns `503 UNAVAILABLE — "This model is currently experiencing high demand"`
+fairly often on popular models. The `consult` node handles it:
+
+1. Retries the primary model `LLM_MAX_RETRIES` times with exponential backoff.
+2. Falls back through `GEMINI_FALLBACK_MODELS` / `OPENROUTER_FALLBACK_MODELS`.
+3. Only then reports a readable message to the UI.
+
+Retries only happen **before the first token** — LangGraph forwards tokens as they arrive,
+so restarting mid-stream would duplicate text. After partial output we keep what we have.
+
+Bad API keys (401) and bad model ids (404) **fail immediately** — retrying can't help, and
+the error tells you which env var to fix.
+
+Check a model id before using it:
+
+```bash
+curl "http://localhost:8000/api/models?provider=gemini"
 ```
 
 ## Switching provider at runtime

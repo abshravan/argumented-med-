@@ -74,6 +74,81 @@ def build_llm(
 
 
 # --------------------------------------------------------------------------
+# Error classification
+# --------------------------------------------------------------------------
+#: Errors worth retrying / falling back on. Everything else fails fast.
+TRANSIENT = "transient"
+AUTH = "auth"
+NOT_FOUND = "not_found"
+RATE_LIMIT = "rate_limit"
+UNKNOWN = "unknown"
+
+
+def classify_error(exc: BaseException) -> str:
+    """Bucket a provider exception so we know whether retrying can help."""
+    text = f"{type(exc).__name__} {exc}".lower()
+
+    if any(k in text for k in ("401", "403", "api key", "unauthenticated", "permission denied")):
+        return AUTH
+    if any(k in text for k in ("404", "not found", "does not exist", "is not supported")):
+        return NOT_FOUND
+    if any(k in text for k in ("429", "resource_exhausted", "rate limit", "quota")):
+        return RATE_LIMIT
+    if any(
+        k in text
+        for k in (
+            "503",
+            "unavailable",
+            "high demand",
+            "overloaded",
+            "500",
+            "internal error",
+            "502",
+            "504",
+            "timeout",
+            "timed out",
+            "connection",
+        )
+    ):
+        return TRANSIENT
+    return UNKNOWN
+
+
+def friendly_error(exc: BaseException, model: str, provider: str) -> str:
+    """A message a clinician-facing UI can actually show."""
+    kind = classify_error(exc)
+    if kind == AUTH:
+        key = "GOOGLE_API_KEY" if provider == "gemini" else "OPENROUTER_API_KEY"
+        return f"Authentication failed for {provider}. Check {key} in backend/.env."
+    if kind == NOT_FOUND:
+        return (
+            f"The model '{model}' was not found on {provider}. "
+            "Check the model id in Settings (or GEMINI_MODEL / OPENROUTER_MODEL in backend/.env)."
+        )
+    if kind == RATE_LIMIT:
+        return (
+            f"Rate limit or quota reached on {provider} for '{model}'. "
+            "Wait a moment, or switch model/provider in Settings."
+        )
+    if kind == TRANSIENT:
+        return (
+            f"'{model}' is temporarily unavailable on {provider} (the provider reported high "
+            "demand). Retries and fallback models were exhausted — try again shortly, or pick a "
+            "different model in Settings."
+        )
+    return f"{type(exc).__name__}: {exc}"
+
+
+def model_plan(primary: str, fallbacks: list[str], retries: int) -> list[str]:
+    """Attempt order: the primary a few times, then each distinct fallback once."""
+    plan = [primary] * max(1, retries)
+    for candidate in fallbacks:
+        if candidate and candidate != primary and candidate not in plan[retries:]:
+            plan.append(candidate)
+    return plan
+
+
+# --------------------------------------------------------------------------
 # JSON extraction
 # --------------------------------------------------------------------------
 _JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*\}|\[.*\])\s*```", re.DOTALL)

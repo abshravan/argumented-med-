@@ -6,13 +6,23 @@ pure Python (no LLM) and splits the result into the narrative plus the insight c
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
-from ..llm import build_llm, extract_json
+from ..config import get_settings
+from ..llm import (
+    AUTH,
+    NOT_FOUND,
+    build_llm,
+    classify_error,
+    extract_json,
+    friendly_error,
+    model_plan,
+)
 from ..schemas import (
     Diagnosis,
     Differential,
@@ -39,33 +49,95 @@ def _context(state: ClinicalState) -> str:
     return "\n\n".join(parts) or "No information provided yet."
 
 
+def _chunk_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):  # providers that chunk as content blocks
+        return "".join(
+            block.get("text", "") if isinstance(block, dict) else str(block)
+            for block in content
+        )
+    return ""
+
+
+class ModelUnavailable(RuntimeError):
+    """All attempts failed. Carries a message safe to show in the UI."""
+
+
 async def consult(state: ClinicalState) -> dict:
-    """The single LLM call. Streamed so the UI can render tokens as they arrive."""
-    llm = build_llm(
-        provider=state.get("provider"),
-        model=state.get("model"),
-        temperature=state.get("temperature"),
-        streaming=True,
-    )
+    """The single LLM call, with retry + model fallback on transient provider errors.
+
+    Providers return 503 "high demand" fairly often on popular models. We retry the
+    primary model, then fall back to configured alternatives.
+
+    Retrying is only safe *before* any token has been emitted — LangGraph forwards
+    tokens to the client as they arrive, so restarting mid-stream would duplicate
+    text. If a failure happens after partial output we keep what we have.
+    """
+    settings = get_settings()
+    provider = (state.get("provider") or settings.provider or "gemini").lower()
+    primary = state.get("model") or settings.default_model_for(provider)
+    plan = model_plan(primary, settings.fallbacks_for(provider), settings.max_retries)
+
     messages = [
         SystemMessage(content=prompts.CONSULT_SYSTEM),
         HumanMessage(content=_context(state)),
     ]
 
-    parts: list[str] = []
-    async for chunk in llm.astream(messages):
-        content = chunk.content
-        if isinstance(content, str):
-            parts.append(content)
-        elif isinstance(content, list):  # providers that chunk as content blocks
-            parts.append(
-                "".join(
-                    block.get("text", "") if isinstance(block, dict) else str(block)
-                    for block in content
-                )
-            )
+    last_exc: BaseException | None = None
+    last_model = primary
 
-    return {"raw": "".join(parts)}
+    for attempt, model in enumerate(plan):
+        last_model = model
+        parts: list[str] = []
+        try:
+            llm = build_llm(
+                provider=provider,
+                model=model,
+                temperature=state.get("temperature"),
+                streaming=True,
+            )
+            async for chunk in llm.astream(messages):
+                text = _chunk_text(chunk.content)
+                if text:
+                    parts.append(text)
+
+            if attempt:
+                log.info("consult succeeded on attempt %d using %s", attempt + 1, model)
+            return {"raw": "".join(parts)}
+
+        except asyncio.CancelledError:
+            raise  # client disconnected — don't swallow
+
+        except Exception as exc:  # noqa: BLE001
+            kind = classify_error(exc)
+            last_exc = exc
+
+            if parts:
+                # Tokens already reached the client; a retry would duplicate them.
+                log.warning("stream failed after %d chunks on %s: %s", len(parts), model, exc)
+                return {"raw": "".join(parts)}
+
+            if kind in (AUTH, NOT_FOUND):
+                raise ModelUnavailable(friendly_error(exc, model, provider)) from exc
+
+            if attempt == len(plan) - 1:
+                break
+
+            delay = settings.retry_base_delay * (2**attempt)
+            log.warning(
+                "consult attempt %d/%d failed on %s (%s) — retrying in %.1fs",
+                attempt + 1,
+                len(plan),
+                model,
+                kind,
+                delay,
+            )
+            await asyncio.sleep(delay)
+
+    raise ModelUnavailable(
+        friendly_error(last_exc or RuntimeError("unknown"), last_model, provider)
+    ) from last_exc
 
 
 def _coerce(model: type[BaseModel], value: Any) -> Any:

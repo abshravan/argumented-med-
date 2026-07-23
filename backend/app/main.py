@@ -16,6 +16,7 @@ import asyncio
 from .config import get_settings
 from .graph import get_graph
 from .graph.builder import STREAMING_NODE
+from .graph.nodes import ModelUnavailable
 from .graph.prompts import DELIMITER
 from .llm import ProviderError, build_llm
 from .schemas import ConsultRequest, HealthResponse
@@ -120,6 +121,57 @@ async def health() -> HealthResponse:
     )
 
 
+@app.get("/api/models")
+async def models(provider: str | None = None) -> dict:
+    """List models the configured key can actually use.
+
+    Handy when a request fails with 404 (bad model id) or 503 (model overloaded) —
+    `curl localhost:8000/api/models?provider=gemini`
+    """
+    import httpx
+
+    target = (provider or settings.provider).lower()
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            if target == "gemini":
+                if not settings.google_api_key:
+                    raise HTTPException(503, "GOOGLE_API_KEY is not set.")
+                res = await client.get(
+                    "https://generativelanguage.googleapis.com/v1beta/models",
+                    params={"key": settings.google_api_key},
+                )
+                res.raise_for_status()
+                names = [
+                    m["name"].removeprefix("models/")
+                    for m in res.json().get("models", [])
+                    if "generateContent" in m.get("supportedGenerationMethods", [])
+                ]
+            elif target == "openrouter":
+                if not settings.openrouter_api_key:
+                    raise HTTPException(503, "OPENROUTER_API_KEY is not set.")
+                res = await client.get(
+                    f"{settings.openrouter_base_url}/models",
+                    headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
+                )
+                res.raise_for_status()
+                names = [m["id"] for m in res.json().get("data", [])]
+            else:
+                raise HTTPException(400, f"Unknown provider '{target}'.")
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"Could not list models: {exc}") from exc
+
+    return {
+        "provider": target,
+        "configured": settings.default_model_for(target),
+        "fallbacks": settings.fallbacks_for(target),
+        "count": len(names),
+        "models": sorted(names),
+    }
+
+
 @app.post("/api/consult/stream")
 async def consult_stream(req: ConsultRequest) -> StreamingResponse:
     """Stream the assessment tokens, then each insight card as its node finishes."""
@@ -206,11 +258,18 @@ async def consult_stream(req: ConsultRequest) -> StreamingResponse:
 
             yield _sse("done", {})
 
-        except ProviderError as exc:
+        except asyncio.CancelledError:
+            # Client navigated away or the server is shutting down. Nothing to report.
+            log.info("consult stream cancelled by client")
+            raise
+        except (ProviderError, ModelUnavailable) as exc:
+            log.warning("consult unavailable: %s", exc)
             yield _sse("error", {"message": str(exc)})
+            yield _sse("done", {})
         except Exception as exc:  # noqa: BLE001 - surface failures to the UI
             log.exception("consult stream failed")
             yield _sse("error", {"message": f"{type(exc).__name__}: {exc}"})
+            yield _sse("done", {})
 
     return StreamingResponse(
         generator(),
