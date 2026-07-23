@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AlertTriangle, X } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import PatientHeader from "@/components/PatientHeader";
@@ -15,16 +16,40 @@ import { DotPattern } from "@/components/magicui/dot-pattern";
 import { cn } from "@/lib/utils";
 import { useClinicalEngine } from "@/lib/useClinicalEngine";
 import type { ConsultationRecord } from "@/lib/store";
+import { Session, getSession, signOut } from "@/lib/auth";
 
 type NavId = "new" | "history" | "saved" | "favorites" | "settings";
 
 export default function Page() {
+  const router = useRouter();
   const engine = useClinicalEngine();
+  const [session, setSession] = useState<Session | null>(null);
+  const [checkedAuth, setCheckedAuth] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [insightsHidden, setInsightsHidden] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [activeNav, setActiveNav] = useState<NavId>("new");
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Route guard — unauthenticated users go to /login, new accounts to /onboarding.
+  useEffect(() => {
+    const s = getSession();
+    if (!s) {
+      router.replace("/login");
+      return;
+    }
+    if (!s.onboarded) {
+      router.replace("/onboarding");
+      return;
+    }
+    setSession(s);
+    setCheckedAuth(true);
+  }, [router]);
+
+  const handleSignOut = useCallback(() => {
+    signOut();
+    router.replace("/login");
+  }, [router]);
 
   // Theme init + apply
   useEffect(() => {
@@ -84,6 +109,9 @@ export default function Page() {
     [engine],
   );
 
+  // Avoid flashing the workspace before the guard resolves.
+  if (!checkedAuth || !session) return null;
+
   const isWorkspace = activeNav === "new";
   const showInsights = isWorkspace && engine.started && !insightsHidden;
 
@@ -101,6 +129,8 @@ export default function Page() {
         onNewConsultation={handleNew}
         active={activeNav}
         onNavigate={(id) => setActiveNav(id as NavId)}
+        session={session}
+        onSignOut={handleSignOut}
       />
 
       {/* Center column */}

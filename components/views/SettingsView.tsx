@@ -5,6 +5,7 @@ import { Settings as SettingsIcon, Check, X, Loader2, ShieldCheck, Sun, Moon, Tr
 import { AppSettings, MODEL_SUGGESTIONS, Provider, loadSettings, saveSettings } from "@/lib/settings";
 import { checkHealth, HealthInfo } from "@/lib/api";
 import { clearAll } from "@/lib/store";
+import { Session, getSession } from "@/lib/auth";
 import { ViewShell } from "./ViewShell";
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
@@ -85,9 +86,11 @@ export default function SettingsView({
   const [status, setStatus] = useState<"idle" | "testing" | "ok" | "fail">("idle");
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [message, setMessage] = useState("");
+  const [session, setSession] = useState<Session | null>(null);
 
   useEffect(() => {
     setSettings(loadSettings());
+    setSession(getSession());
   }, []);
 
   const update = (patch: Partial<AppSettings>) => {
@@ -269,15 +272,21 @@ export default function SettingsView({
           </Row>
         </Section>
 
-        <Section title="Profile">
+        <Section title="Profile" hint="From the account you signed in with">
           <Row label="Name" hint="Shown on notes and signatures">
-            <span style={{ fontSize: 13, color: "var(--text-soft)" }}>Dr. John Doe</span>
+            <span style={{ fontSize: 13, color: "var(--text-soft)" }}>{session?.name ?? "—"}</span>
+          </Row>
+          <Row label="Email">
+            <span style={{ fontSize: 13, color: "var(--text-soft)" }}>{session?.email ?? "—"}</span>
+          </Row>
+          <Row label="Role">
+            <span style={{ fontSize: 13, color: "var(--text-soft)" }}>{session?.role ?? "—"}</span>
           </Row>
           <Row label="Specialty">
-            <span style={{ fontSize: 13, color: "var(--text-soft)" }}>Cardiology</span>
+            <span style={{ fontSize: 13, color: "var(--text-soft)" }}>{session?.specialty || "—"}</span>
           </Row>
-          <Row label="License" hint="Verified">
-            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--teal)" }}>Active</span>
+          <Row label="Organization">
+            <span style={{ fontSize: 13, color: "var(--text-soft)" }}>{session?.organization || "—"}</span>
           </Row>
         </Section>
 

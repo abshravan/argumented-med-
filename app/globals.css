@@ -143,6 +143,12 @@ input:focus, textarea:focus { outline: none; }
   .app:not(.insights-hidden) { --insights-w: 300px; }
 }
 
+/* Auth screens: drop the brand panel on narrow viewports */
+@media (max-width: 900px) {
+  .auth-grid { grid-template-columns: 1fr !important; }
+  .auth-brand { display: none !important; }
+}
+
 /* ============ Generic card ============ */
 .card {
   background: var(--card);

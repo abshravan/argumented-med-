@@ -22,6 +22,10 @@ then `uvicorn app.main:app --reload --port 8000`. See `backend/README.md`.
   node), `insight` frames = one card's structured payload per finished node.
 
 ## Architecture
+- Routes: `/login`, `/signup`, `/onboarding`, `/` (workspace, client-side guarded).
+- `lib/auth.ts` — **demo-only** client auth (localStorage session, no hashing). Test account:
+  `doctor@mediassist.health` / `mediassist`. Swap for real SSO before clinical use.
+- `components/auth/` — AuthLayout (two-panel brand screen from the design), shared form fields.
 - Three-column shell in `app/page.tsx`: Sidebar · Clinical Workspace · AI Clinical Insights.
 - `lib/useClinicalEngine.ts` — client hook with two paths: **backend** (SSE from FastAPI) and
   **demo** (seeded scenarios). Falls back to demo automatically if the backend is unreachable.

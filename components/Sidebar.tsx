@@ -15,8 +15,10 @@ import {
   Cpu,
   Wifi,
 } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { AnimatedGradientText } from "@/components/magicui/animated-gradient-text";
 import { AnimatedShinyText } from "@/components/magicui/animated-shiny-text";
+import type { Session } from "@/lib/auth";
 
 interface Props {
   collapsed: boolean;
@@ -26,6 +28,8 @@ interface Props {
   onNewConsultation: () => void;
   active: string;
   onNavigate: (id: string) => void;
+  session?: Session | null;
+  onSignOut?: () => void;
 }
 
 const NAV = [
@@ -44,8 +48,13 @@ export default function Sidebar({
   onNewConsultation,
   active,
   onNavigate,
+  session,
+  onSignOut,
 }: Props) {
   const [profileOpen, setProfileOpen] = useState(false);
+  const displayName = session?.name ?? "Dr. John Doe";
+  const displayMeta = session?.specialty || session?.role || "Cardiology";
+  const displayInitials = session?.initials ?? "JD";
 
   return (
     <aside
@@ -213,10 +222,62 @@ export default function Sidebar({
         </div>
 
         {/* Profile */}
-        <div style={{ borderTop: "1px solid var(--border-faint)", paddingTop: 10 }}>
+        <div style={{ borderTop: "1px solid var(--border-faint)", paddingTop: 10, position: "relative" }}>
+          {profileOpen && !collapsed && (
+            <div
+              className="enter"
+              style={{
+                position: "absolute",
+                bottom: "calc(100% + 6px)",
+                left: 0,
+                right: 0,
+                background: "var(--card)",
+                border: "1px solid var(--border-strong)",
+                borderRadius: 11,
+                padding: 6,
+                boxShadow: "var(--shadow-pop)",
+                zIndex: 30,
+              }}
+            >
+              <div style={{ padding: "8px 10px 10px", borderBottom: "1px solid var(--border-faint)" }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text)" }}>{displayName}</div>
+                <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2, wordBreak: "break-all" }}>
+                  {session?.email ?? "—"}
+                </div>
+                {session?.organization && (
+                  <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 3 }}>{session.organization}</div>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  setProfileOpen(false);
+                  onSignOut?.();
+                }}
+                style={{
+                  width: "100%",
+                  marginTop: 5,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 9,
+                  padding: "9px 10px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--red-light)",
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.08)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              >
+                <LogOut size={14} /> Sign out
+              </button>
+            </div>
+          )}
           <button
-            onClick={() => !collapsed && setProfileOpen((v) => !v)}
-            title="Dr. John Doe · Cardiology"
+            onClick={() => (collapsed ? onSignOut?.() : setProfileOpen((v) => !v))}
+            title={collapsed ? "Sign out" : `${displayName} · ${displayMeta}`}
             style={{
               width: "100%",
               display: "flex",
@@ -244,13 +305,24 @@ export default function Sidebar({
                 flex: "none",
               }}
             >
-              JD
+              {displayInitials}
             </div>
             {!collapsed && (
               <>
-                <div style={{ flex: 1, textAlign: "left" }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Dr. John Doe</div>
-                  <div style={{ fontSize: 11, color: "var(--text-dim)" }}>Cardiology</div>
+                <div style={{ flex: 1, textAlign: "left", minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: "var(--text)",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {displayName}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{displayMeta}</div>
                 </div>
                 <ChevronDown size={15} color="var(--text-dim)" style={{ transform: profileOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
               </>

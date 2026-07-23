@@ -93,6 +93,25 @@ lib/
 design-source/       # the imported MediAssist.dc.html theme reference
 ```
 
+## Sign in (test account)
+
+The app opens at `/login`. Use the built-in test account — it's prefilled, and there's a
+**"Sign in as test user"** button:
+
+```
+doctor@mediassist.health
+mediassist
+```
+
+Routes: `/login` · `/signup` · `/onboarding` · `/` (workspace, guarded).
+Creating an account via `/signup` stores it in this browser and sends you through a
+three-step onboarding (role & specialty → AI engine → safety recap). Sign out from the
+profile row at the bottom of the sidebar.
+
+> ⚠️ **Demo auth only.** `lib/auth.ts` is a client-side mock — no server, no password
+> hashing, session lives in `localStorage`. Replace it with real hospital SSO / OIDC before
+> any clinical use.
+
 ## Sidebar tabs
 
 All five are functional and backed by browser-local storage (nothing is uploaded):
