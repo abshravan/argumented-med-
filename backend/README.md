@@ -87,12 +87,16 @@ the log shows:
 model response contained no ---INSIGHTS--- block (response was 438 chars, finish_reason=MAX_TOKENS)
 ```
 
-Two fixes, both in `backend/.env`:
+The fix is simply a bigger budget:
 
 ```bash
-GEMINI_THINKING_BUDGET=0   # spend nothing on reasoning (recommended here)
-MAX_OUTPUT_TOKENS=8192     # and give the answer plenty of room
+MAX_OUTPUT_TOKENS=8192
 ```
+
+> ⚠️ `GEMINI_THINKING_BUDGET` is **not accepted by Gemini 3.x** — setting it there causes
+> `400 Bad Request` on a model that otherwise works. It only applies to Gemini 2.5. Leave it
+> blank unless you have confirmed your model supports it. (If it is set and the model 400s,
+> the backend drops it and retries automatically.)
 
 `finish_reason` is captured from the stream, so truncation is reported explicitly rather
 than showing up as mysteriously empty insight cards.
@@ -105,6 +109,22 @@ fairly often on popular models. The `consult` node handles it:
 1. Retries the primary model `LLM_MAX_RETRIES` times with exponential backoff.
 2. Falls back through `GEMINI_FALLBACK_MODELS` / `OPENROUTER_FALLBACK_MODELS`.
 3. Only then reports a readable message to the UI.
+
+Not every failure is retried — that would waste quota:
+
+| Error | Behaviour |
+| --- | --- |
+| 503 / timeout | retry same model, then fall back |
+| 429 quota | **skip** remaining tries on that model, jump to the next distinct one |
+| 400 invalid | fail immediately (retrying an identical bad request can't help) |
+| 401 / 404 | fail immediately, message names the env var to fix |
+
+A `429` reading `limit: 0` means your project has **no quota at all** for that model —
+waiting won't help, so change the model rather than leaving it in the fallback list. Keep
+`GEMINI_FALLBACK_MODELS` empty unless you've confirmed quota for the models in it.
+
+`LLM_SDK_MAX_RETRIES=1` keeps the provider SDK from adding its own 30s+ backoff on top of
+ours, and `LLM_REQUEST_BUDGET_SECONDS` is a hard ceiling so a request can never hang.
 
 Retries only happen **before the first token** — LangGraph forwards tokens as they arrive,
 so restarting mid-stream would duplicate text. After partial output we keep what we have.

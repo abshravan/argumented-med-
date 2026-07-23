@@ -25,12 +25,38 @@ class ProviderError(RuntimeError):
     """Raised when a provider is requested but not configured."""
 
 
+#: Kwargs that only exist on newer SDK releases — dropped if unsupported.
+_OPTIONAL_KWARGS = ("thinking_budget", "max_retries", "disable_streaming", "default_headers")
+
+
+def _construct(cls, kwargs: dict[str, Any]):
+    """Instantiate a chat model, dropping kwargs this SDK version doesn't accept."""
+    attempt = dict(kwargs)
+    for _ in range(len(_OPTIONAL_KWARGS) + 1):
+        try:
+            return cls(**attempt)
+        except TypeError as exc:
+            dropped = next(
+                (k for k in _OPTIONAL_KWARGS if k in attempt and k in str(exc)), None
+            )
+            if dropped is None:
+                raise
+            attempt.pop(dropped)
+    return cls(**attempt)
+
+
 def build_llm(
     provider: Optional[str] = None,
     model: Optional[str] = None,
     temperature: Optional[float] = None,
     streaming: bool = False,
+    allow_thinking_budget: bool = True,
 ) -> BaseChatModel:
+    """Construct a chat model.
+
+    ``allow_thinking_budget=False`` omits Gemini's ``thinking_budget`` — Gemini 3.x
+    rejects it with a 400, so we retry without it.
+    """
     settings = get_settings()
     provider = (provider or settings.provider or "gemini").lower()
     temperature = settings.temperature if temperature is None else temperature
@@ -48,17 +74,15 @@ def build_llm(
             temperature=temperature,
             max_output_tokens=settings.max_output_tokens,
             disable_streaming=not streaming,
+            # Keep the SDK's own retry loop short; ours handles backoff and fallback.
+            max_retries=settings.sdk_max_retries,
         )
-        # Thinking models spend part of max_output_tokens on reasoning. Capping the
-        # budget leaves room for the actual answer. Older SDKs reject the kwarg.
-        if settings.gemini_thinking_budget is not None:
-            try:
-                return ChatGoogleGenerativeAI(
-                    **kwargs, thinking_budget=settings.gemini_thinking_budget
-                )
-            except TypeError:
-                pass
-        return ChatGoogleGenerativeAI(**kwargs)
+        # Thinking models spend part of max_output_tokens on reasoning. Gemini 2.5
+        # accepts a budget of 0; Gemini 3.x rejects the parameter outright (400).
+        if allow_thinking_budget and settings.gemini_thinking_budget is not None:
+            kwargs["thinking_budget"] = settings.gemini_thinking_budget
+
+        return _construct(ChatGoogleGenerativeAI, kwargs)
 
     if provider == "openrouter":
         if not settings.openrouter_api_key:
@@ -67,17 +91,21 @@ def build_llm(
             )
         from langchain_openai import ChatOpenAI
 
-        return ChatOpenAI(
-            model=model or settings.openrouter_model,
-            api_key=settings.openrouter_api_key,
-            base_url=settings.openrouter_base_url,
-            temperature=temperature,
-            max_tokens=settings.max_output_tokens,
-            streaming=streaming,
-            default_headers={
-                "HTTP-Referer": settings.openrouter_site_url,
-                "X-Title": settings.openrouter_app_name,
-            },
+        return _construct(
+            ChatOpenAI,
+            dict(
+                model=model or settings.openrouter_model,
+                api_key=settings.openrouter_api_key,
+                base_url=settings.openrouter_base_url,
+                temperature=temperature,
+                max_tokens=settings.max_output_tokens,
+                streaming=streaming,
+                max_retries=settings.sdk_max_retries,
+                default_headers={
+                    "HTTP-Referer": settings.openrouter_site_url,
+                    "X-Title": settings.openrouter_app_name,
+                },
+            ),
         )
 
     raise ProviderError(f"Unknown provider '{provider}'. Use 'gemini' or 'openrouter'.")
@@ -91,7 +119,11 @@ TRANSIENT = "transient"
 AUTH = "auth"
 NOT_FOUND = "not_found"
 RATE_LIMIT = "rate_limit"
+INVALID = "invalid"
 UNKNOWN = "unknown"
+
+#: Never worth retrying — the request itself is wrong.
+FATAL = {AUTH, NOT_FOUND, INVALID}
 
 
 def classify_error(exc: BaseException) -> str:
@@ -104,6 +136,10 @@ def classify_error(exc: BaseException) -> str:
         return NOT_FOUND
     if any(k in text for k in ("429", "resource_exhausted", "rate limit", "quota")):
         return RATE_LIMIT
+    # 400 = malformed request (e.g. a parameter this model rejects). Retrying the
+    # identical request will always fail the same way.
+    if any(k in text for k in ("400", "invalid_argument", "invalid argument", "bad request")):
+        return INVALID
     if any(
         k in text
         for k in (
@@ -135,10 +171,17 @@ def friendly_error(exc: BaseException, model: str, provider: str) -> str:
             f"The model '{model}' was not found on {provider}. "
             "Check the model id in Settings (or GEMINI_MODEL / OPENROUTER_MODEL in backend/.env)."
         )
+    if kind == INVALID:
+        return (
+            f"{provider} rejected the request for '{model}' (400). A generation parameter "
+            "is likely unsupported by this model — e.g. GEMINI_THINKING_BUDGET is not "
+            "accepted by Gemini 3.x. Clear it in backend/.env, or pick another model."
+        )
     if kind == RATE_LIMIT:
         return (
-            f"Rate limit or quota reached on {provider} for '{model}'. "
-            "Wait a moment, or switch model/provider in Settings."
+            f"Quota exceeded on {provider} for '{model}'. If the error says 'limit: 0' your "
+            "project has no free-tier quota for that model — pick a different model in "
+            "Settings or enable billing. Otherwise wait for the quota window to reset."
         )
     if kind == TRANSIENT:
         return (

@@ -15,8 +15,9 @@ from pydantic import BaseModel
 
 from ..config import get_settings
 from ..llm import (
-    AUTH,
-    NOT_FOUND,
+    FATAL,
+    INVALID,
+    RATE_LIMIT,
     build_llm,
     classify_error,
     extract_json,
@@ -86,8 +87,13 @@ async def consult(state: ClinicalState) -> dict:
 
     last_exc: BaseException | None = None
     last_model = primary
+    deadline = asyncio.get_event_loop().time() + settings.request_budget_seconds
+    allow_thinking_budget = True
+    attempt = -1
 
-    for attempt, model in enumerate(plan):
+    while attempt + 1 < len(plan):
+        attempt += 1
+        model = plan[attempt]
         last_model = model
         parts: list[str] = []
         try:
@@ -96,6 +102,7 @@ async def consult(state: ClinicalState) -> dict:
                 model=model,
                 temperature=state.get("temperature"),
                 streaming=True,
+                allow_thinking_budget=allow_thinking_budget,
             )
             finish_reason = ""
             async for chunk in llm.astream(messages):
@@ -121,13 +128,41 @@ async def consult(state: ClinicalState) -> dict:
                 log.warning("stream failed after %d chunks on %s: %s", len(parts), model, exc)
                 return {"raw": "".join(parts)}
 
-            if kind in (AUTH, NOT_FOUND):
+            # A 400 caused by thinking_budget is recoverable: drop it and retry once.
+            if (
+                kind == INVALID
+                and allow_thinking_budget
+                and settings.gemini_thinking_budget is not None
+                and provider == "gemini"
+            ):
+                log.warning(
+                    "%s rejected thinking_budget=%s (400) — retrying without it",
+                    model,
+                    settings.gemini_thinking_budget,
+                )
+                allow_thinking_budget = False
+                attempt -= 1  # re-run this same model
+                continue
+
+            if kind in FATAL:
                 raise ModelUnavailable(friendly_error(exc, model, provider)) from exc
 
-            if attempt == len(plan) - 1:
+            # Quota is not going to free up in a couple of seconds. Skip the remaining
+            # attempts on THIS model and move straight to the next distinct one.
+            if kind == RATE_LIMIT:
+                log.warning("quota exhausted on %s — skipping to next model", model)
+                while attempt + 1 < len(plan) and plan[attempt + 1] == model:
+                    attempt += 1
+                continue
+
+            if attempt >= len(plan) - 1:
                 break
 
             delay = settings.retry_base_delay * (2**attempt)
+            if asyncio.get_event_loop().time() + delay > deadline:
+                log.warning("consult budget of %.0fs exhausted", settings.request_budget_seconds)
+                break
+
             log.warning(
                 "consult attempt %d/%d failed on %s (%s) — retrying in %.1fs",
                 attempt + 1,

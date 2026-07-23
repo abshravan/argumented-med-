@@ -22,10 +22,10 @@ class Settings:
 
     google_api_key: str = os.getenv("GOOGLE_API_KEY", "") or os.getenv("GEMINI_API_KEY", "")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    # Empty by default: a fallback your key has no quota for just wastes time and
+    # requests. Set this explicitly to models you know your project can call.
     gemini_fallback_models: list[str] = field(
-        default_factory=lambda: _split(
-            os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.0-flash,gemini-2.0-flash-lite")
-        )
+        default_factory=lambda: _split(os.getenv("GEMINI_FALLBACK_MODELS", ""))
     )
 
     openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
@@ -54,6 +54,13 @@ class Settings:
     #: Attempts against the primary model before falling back (transient errors only).
     max_retries: int = int(os.getenv("LLM_MAX_RETRIES", "2"))
     retry_base_delay: float = float(os.getenv("LLM_RETRY_BASE_DELAY", "1.5"))
+
+    #: Retries *inside* the provider SDK. Keep this low — the SDK backs off for tens
+    #: of seconds on 429s, which stacks on top of our own retry loop and hangs the UI.
+    sdk_max_retries: int = int(os.getenv("LLM_SDK_MAX_RETRIES", "1"))
+
+    #: Hard wall-clock ceiling for one consultation, so a request can never hang.
+    request_budget_seconds: float = float(os.getenv("LLM_REQUEST_BUDGET_SECONDS", "60"))
 
     host: str = os.getenv("HOST", "0.0.0.0")
     port: int = int(os.getenv("PORT", "8000"))
