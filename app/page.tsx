@@ -10,6 +10,7 @@ import Composer from "@/components/Composer";
 import InsightsPanel from "@/components/InsightsPanel";
 import EmptyState from "@/components/EmptyState";
 import ConsultationListView from "@/components/views/ConsultationListView";
+import NewConsultationView from "@/components/views/NewConsultationView";
 import FavoritesView from "@/components/views/FavoritesView";
 import SettingsView from "@/components/views/SettingsView";
 import { DotPattern } from "@/components/magicui/dot-pattern";
@@ -109,6 +110,33 @@ export default function Page() {
     [engine],
   );
 
+  /** Patient chosen from the PMS lookup / intake form. */
+  const handlePatientSelected = useCallback(
+    (patient: Parameters<typeof engine.selectPatient>[0], chiefComplaint: string) => {
+      engine.selectPatient(patient);
+      // With a complaint we go straight into the consultation; otherwise the
+      // clinician lands on the starter prompts with the patient header loaded.
+      if (chiefComplaint.trim()) engine.start(chiefComplaint.trim());
+    },
+    [engine],
+  );
+
+  /** "Skip — start without a record": jump to the starter prompts. */
+  const handleSkipPatient = useCallback(() => {
+    engine.selectPatient({
+      name: "New Patient",
+      age: 0,
+      gender: "—",
+      weight: "—",
+      height: "—",
+      bloodGroup: "—",
+      chiefComplaint: "Awaiting history",
+      visitType: "OPD · Consultation",
+      mrn: "MRN — pending",
+      status: { label: "Stable", tone: "stable" },
+    });
+  }, [engine]);
+
   // Avoid flashing the workspace before the guard resolves.
   if (!checkedAuth || !session) return null;
 
@@ -191,8 +219,14 @@ export default function Page() {
           <SettingsView theme={theme} onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))} />
         )}
 
+        {/* Stage 1 of a new consultation: choose or register the patient. */}
+        {isWorkspace && !engine.patient && (
+          <NewConsultationView onStart={handlePatientSelected} onSkip={handleSkipPatient} />
+        )}
+
         {isWorkspace &&
-          (engine.started && engine.patient ? (
+          engine.patient &&
+          (engine.started ? (
             <>
               <PatientHeader
                 patient={engine.patient}
@@ -229,6 +263,11 @@ export default function Page() {
             </>
           ) : (
             <>
+              <PatientHeader
+                patient={engine.patient}
+                insightsHidden={insightsHidden}
+                onToggleInsights={() => setInsightsHidden((v) => !v)}
+              />
               <div style={{ flex: 1, overflowY: "auto" }}>
                 <EmptyState onStart={handleStart} />
               </div>

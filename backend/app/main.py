@@ -60,6 +60,29 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+def _patient_block(req: ConsultRequest) -> str:
+    """Confirmed PMS demographics, so the model doesn't have to infer them."""
+    p = req.patient
+    if not p:
+        return ""
+    fields = [
+        ("Name", p.name),
+        ("Age", f"{p.age}" if p.age else None),
+        ("Sex", p.gender),
+        ("Weight", p.weight),
+        ("Height", p.height),
+        ("Blood group", p.bloodGroup),
+        ("MRN", p.mrn),
+        ("Visit type", p.visitType),
+        ("Triage", p.statusLabel),
+        ("Chief complaint", p.chiefComplaint),
+    ]
+    lines = [f"- {label}: {value}" for label, value in fields if value and value != "—"]
+    if not lines:
+        return ""
+    return "CONFIRMED PATIENT RECORD (from the PMS — treat as authoritative):\n" + "\n".join(lines)
+
+
 def _transcript(req: ConsultRequest) -> tuple[str, str]:
     """Render the conversation, and pull out the clinician's latest turn."""
     lines = []
@@ -74,7 +97,9 @@ def _transcript(req: ConsultRequest) -> tuple[str, str]:
             break
 
     # Keep the last ~20 turns so long consultations stay within context.
-    return "\n\n".join(lines[-20:]), latest
+    body = "\n\n".join(lines[-20:])
+    patient = _patient_block(req)
+    return (f"{patient}\n\n{body}" if patient else body), latest
 
 
 @app.get("/api/health", response_model=HealthResponse)

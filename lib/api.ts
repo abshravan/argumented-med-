@@ -71,7 +71,25 @@ export interface StreamOptions extends StreamHandlers {
   model?: string;
   temperature?: number;
   messages: { role: "doctor" | "ai"; content: string }[];
+  /** Confirmed demographics from the PMS, so the model doesn't have to infer them. */
+  patient?: Patient | null;
   signal?: AbortSignal;
+}
+
+/** Frontend patient → backend PatientSummary shape. */
+function toPatientSummary(p: Patient) {
+  return {
+    name: p.name,
+    age: p.age,
+    gender: p.gender,
+    weight: p.weight,
+    height: p.height,
+    bloodGroup: p.bloodGroup,
+    chiefComplaint: p.chiefComplaint,
+    visitType: p.visitType,
+    mrn: p.mrn,
+    statusLabel: p.status.label,
+  };
 }
 
 /**
@@ -79,14 +97,20 @@ export interface StreamOptions extends StreamHandlers {
  * Uses fetch + a stream reader because EventSource cannot issue POST requests.
  */
 export async function streamConsult(opts: StreamOptions): Promise<void> {
-  const { baseUrl, provider, model, temperature, messages, signal } = opts;
+  const { baseUrl, provider, model, temperature, messages, patient, signal } = opts;
 
   let res: Response;
   try {
     res = await fetch(`${baseUrl.replace(/\/$/, "")}/api/consult/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages, provider, model: model || undefined, temperature }),
+      body: JSON.stringify({
+        messages,
+        provider,
+        model: model || undefined,
+        temperature,
+        patient: patient ? toPatientSummary(patient) : undefined,
+      }),
       signal,
     });
   } catch {

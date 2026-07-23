@@ -112,13 +112,34 @@ profile row at the bottom of the sidebar.
 > hashing, session lives in `localStorage`. Replace it with real hospital SSO / OIDC before
 > any clinical use.
 
+## Starting a consultation
+
+**New Consultation** now opens a patient step first:
+
+- **Search PMS** — dummy directory of 10 patients in [`lib/pms.ts`](lib/pms.ts). Search by
+  name, MRN, phone, DOB or active problem. Cards show allergies, active problems, current
+  medications, DOB, ward and last visit. Select one to expand the consultation details.
+- **Add new patient** — register someone not in the PMS (name, MRN, age, sex, blood group,
+  weight, height, allergies). Session-only; nothing is written back.
+- Either way you set **chief complaint**, **visit type** and **triage priority**. Give a
+  complaint and it starts the consultation immediately; leave it blank and you land on the
+  starter prompts with the patient header already loaded.
+- **Skip — start without a record** preserves the old behaviour.
+
+The selected record is authoritative: confirmed demographics are sent to the backend as a
+`CONFIRMED PATIENT RECORD` block, and neither the demo scenarios nor the LLM `intake` node
+will overwrite it.
+
+> Swap `searchPatients()` in `lib/pms.ts` for a real FHIR `Patient` search or PMS API call —
+> nothing else in the UI depends on where the records come from.
+
 ## Sidebar tabs
 
 All five are functional and backed by browser-local storage (nothing is uploaded):
 
 | Tab | What it does |
 | --- | --- |
-| **New Consultation** | The three-column workspace. Resets to the empty state. |
+| **New Consultation** | Patient intake first — search the PMS or register a new patient — then the three-column workspace. |
 | **Consultation History** | Every consultation, searchable; open, star, or delete. |
 | **Saved Cases** | The starred subset, for teaching / audit / follow-up. |
 | **Favorites** | Every bookmarked message across all consultations; jumps back to its case. |

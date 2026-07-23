@@ -31,7 +31,11 @@ then `uvicorn app.main:app --reload --port 8000`. See `backend/README.md`.
   **demo** (seeded scenarios). Falls back to demo automatically if the backend is unreachable.
 - `lib/api.ts` (SSE client), `lib/settings.ts` (provider/model, localStorage),
   `lib/store.ts` (consultation records → History / Saved / Favorites).
-- `components/views/` — ConsultationListView (history + saved), FavoritesView, SettingsView.
+- `components/views/` — NewConsultationView (PMS search + new-patient intake),
+  ConsultationListView (history + saved), FavoritesView, SettingsView.
+- `lib/pms.ts` — dummy PMS directory + `searchPatients()` (swap for FHIR/PMS API) and
+  `toWorkspacePatient()`. A selected record sets `patientLocked` on the engine, which stops
+  both the demo scenarios and the backend `intake` node from overwriting it.
 - `lib/scenarios.ts` — seeded clinical scenarios keyed by symptom keywords + empty-state starters.
 - `lib/types.ts` — typed clinical models (Patient, Diagnosis, Differential, Insights, SOAP, …).
 - `components/` — Sidebar, PatientHeader (sticky), MessageCard (notebook cards + toolbar + edit),

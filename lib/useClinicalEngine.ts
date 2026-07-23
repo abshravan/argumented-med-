@@ -70,6 +70,8 @@ export interface EngineState {
   id: string;
   started: boolean;
   patient: Patient | null;
+  /** True when the patient came from the PMS lookup / intake form — never overwrite it. */
+  patientLocked: boolean;
   messages: Message[];
   insights: Insights;
   revealed: Record<RevealKey, boolean>;
@@ -87,6 +89,7 @@ function freshState(): EngineState {
     id: uid(),
     started: false,
     patient: null,
+    patientLocked: false,
     messages: [],
     insights: EMPTY_INSIGHTS,
     revealed: { ...NO_REVEAL },
@@ -185,7 +188,8 @@ export function useClinicalEngine() {
         setState((s) => ({
           ...s,
           mode: "demo",
-          patient: scenario.patient,
+          // Keep a patient chosen from the PMS; only fall back to the scenario's.
+          patient: s.patientLocked ? s.patient : scenario.patient,
           scenarioId: scenario.id,
           insights: { ...scenario.insights, differentials: sortDiffs(scenario.insights.differentials) },
           revealed: { ...NO_REVEAL },
@@ -216,6 +220,8 @@ export function useClinicalEngine() {
       const next: EngineState = { ...s, insights: { ...s.insights }, revealed: { ...s.revealed } };
 
       if (node === "intake" && data.patient) {
+        // A PMS record is authoritative — don't let extraction overwrite it.
+        if (s.patientLocked) return s;
         const p = toPatient(data.patient as Record<string, unknown>);
         if (p) next.patient = p;
         return next;
@@ -247,6 +253,10 @@ export function useClinicalEngine() {
         .filter((m) => m.content.trim())
         .map((m) => ({ role: m.role, content: m.content }));
 
+      // Give the model the confirmed PMS demographics rather than making it guess.
+      const current = stateRef.current;
+      const patientContext = current.patientLocked ? current.patient : null;
+
       try {
         await streamConsult({
           baseUrl: settings.apiBaseUrl,
@@ -254,6 +264,7 @@ export function useClinicalEngine() {
           model: settings.model,
           temperature: settings.temperature,
           messages: payload,
+          patient: patientContext,
           signal: ctrl.signal,
           onToken: (text) =>
             setState((s) => ({
@@ -327,10 +338,12 @@ export function useClinicalEngine() {
       const prev = stateRef.current;
       const priorMessages = isFirst ? [] : prev.messages;
       const messages = [...priorMessages, doctorMsg, aiMsg];
+      // A patient chosen in the intake step survives the reset that starts a consultation.
+      const lockedPatient = prev.patientLocked ? prev.patient : null;
 
       setState((s) => {
         const base: EngineState = isFirst
-          ? { ...freshState(), started: true }
+          ? { ...freshState(), id: s.id, started: true }
           : s;
 
         // Each new signal nudges the leading diagnosis in demo mode.
@@ -351,7 +364,10 @@ export function useClinicalEngine() {
           error: null,
           streaming: true,
           insights: useBackend && isFirst ? EMPTY_INSIGHTS : insights,
-          patient: isFirst ? (useBackend ? provisionalPatient(query) : null) : s.patient,
+          patientLocked: isFirst ? !!lockedPatient : s.patientLocked,
+          patient: isFirst
+            ? lockedPatient ?? (useBackend ? provisionalPatient(query) : null)
+            : s.patient,
           messages,
         };
       });
@@ -431,6 +447,11 @@ export function useClinicalEngine() {
     setState(freshState());
   }, [clearTimers]);
 
+  /** Attach a patient from the PMS lookup / intake form, before any message is sent. */
+  const selectPatient = useCallback((patient: Patient) => {
+    setState((s) => ({ ...s, patient, patientLocked: true }));
+  }, []);
+
   /** Re-open a stored consultation (from History / Saved / Favorites). */
   const loadConsultation = useCallback(
     (record: ConsultationRecord) => {
@@ -439,6 +460,7 @@ export function useClinicalEngine() {
         id: record.id,
         started: true,
         patient: record.patient,
+        patientLocked: !!record.patient,
         messages: record.messages,
         insights: record.insights,
         revealed: {
@@ -498,6 +520,7 @@ export function useClinicalEngine() {
     editMessage,
     newConsultation,
     loadConsultation,
+    selectPatient,
     observeDraft,
     dismissError,
   };
