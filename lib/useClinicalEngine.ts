@@ -288,6 +288,17 @@ export function useClinicalEngine() {
             setState((s) => ({
               ...s,
               streaming: false,
+              // Resolve every card. If the model returned no parsable insights we must
+              // still clear the skeletons, otherwise they spin forever.
+              revealed: {
+                diagnosis: true,
+                differentials: true,
+                investigations: true,
+                redflags: true,
+                followups: true,
+                soap: true,
+                references: true,
+              },
               messages: s.messages.map((m) => (m.id === aiId ? { ...m, streaming: false } : m)),
             })),
         });

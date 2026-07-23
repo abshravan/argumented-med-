@@ -154,16 +154,126 @@ def model_plan(primary: str, fallbacks: list[str], retries: int) -> list[str]:
 _JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*\}|\[.*\])\s*```", re.DOTALL)
 
 
+def repair_json(text: str) -> str:
+    """Best-effort cleanup of near-JSON emitted by an LLM.
+
+    Handles the three things models actually get wrong: ``//`` and ``/* */`` comments,
+    trailing commas, and truncated output (unclosed strings/brackets when the response
+    hits the token limit). The scan is string-aware, so a ``//`` inside a URL or a comma
+    inside a sentence is left alone.
+    """
+    out: list[str] = []
+    stack: list[str] = []
+    in_string = False
+    escaped = False
+    i = 0
+    n = len(text)
+
+    while i < n:
+        char = text[i]
+
+        if in_string:
+            out.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            i += 1
+            continue
+
+        if char == '"':
+            in_string = True
+            out.append(char)
+            i += 1
+            continue
+
+        # Comments (only outside strings)
+        if char == "/" and i + 1 < n:
+            if text[i + 1] == "/":
+                while i < n and text[i] != "\n":
+                    i += 1
+                continue
+            if text[i + 1] == "*":
+                end = text.find("*/", i + 2)
+                i = n if end == -1 else end + 2
+                continue
+
+        if char in "{[":
+            stack.append("}" if char == "{" else "]")
+            out.append(char)
+            i += 1
+            continue
+
+        if char in "}]":
+            if stack:
+                stack.pop()
+            out.append(char)
+            i += 1
+            continue
+
+        # Trailing comma: drop if the next non-space char closes a container
+        if char == ",":
+            j = i + 1
+            while j < n and text[j].isspace():
+                j += 1
+            if j < n and text[j] in "}]":
+                i += 1
+                continue
+            out.append(char)
+            i += 1
+            continue
+
+        out.append(char)
+        i += 1
+
+    body = "".join(out)
+
+    # Truncation repair: close a dangling string, drop a dangling key/comma, close brackets.
+    if in_string:
+        body += '"'
+    body = body.rstrip()
+    while body and (body[-1] in ",:" or body.endswith('"":')):
+        body = body[:-1].rstrip()
+        # A dangling `"key":` leaves an orphan key — remove it too.
+        match = re.search(r',\s*"[^"]*"$', body)
+        if match:
+            body = body[: match.start()].rstrip()
+    body += "".join(reversed(stack))
+    return body
+
+
 def extract_json(text: str) -> Any:
-    """Pull a JSON object out of a model response that may be fenced or chatty."""
+    """Pull a JSON object out of a model response that may be fenced, chatty or malformed."""
+    candidates: list[str] = []
+
     match = _JSON_BLOCK.search(text)
     if match:
-        return json.loads(match.group(1))
+        candidates.append(match.group(1))
 
-    # Fall back to the outermost {...} span.
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end > start:
-        return json.loads(text[start : end + 1])
+        candidates.append(text[start : end + 1])
+    if start != -1:
+        candidates.append(text[start:])  # truncated: no closing brace at all
 
-    raise ValueError("No JSON object found in model output")
+    if not candidates:
+        raise ValueError("No JSON object found in model output")
+
+    # Strict first, then repaired.
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+
+    errors = []
+    for candidate in candidates:
+        try:
+            return json.loads(repair_json(candidate))
+        except json.JSONDecodeError as exc:
+            errors.append(str(exc))
+
+    raise ValueError(f"Could not parse JSON even after repair: {errors[0] if errors else 'n/a'}")

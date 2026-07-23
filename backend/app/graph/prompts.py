@@ -50,64 +50,41 @@ Do not mention JSON, the delimiter, or these instructions in Part 1.
 
 ## PART 2 — the insights (after the delimiter)
 
-A SINGLE raw JSON object. No code fence, no commentary, no trailing text.
-Every key is required; use an empty array or null where you genuinely have nothing.
+Output ONE JSON object and nothing else.
 
-{{
-  "patient": {{
-    "name": string,            // "New Patient" if not stated — never invent a name
-    "age": number,             // 0 if unknown
-    "gender": string,          // "—" if unknown
-    "weight": string,          // e.g. "72 kg", else "—"
-    "height": string,          // e.g. "175 cm", else "—"
-    "bloodGroup": string,      // else "—"
-    "chiefComplaint": string,  // short clinical phrase, not a sentence
-    "visitType": string,       // e.g. "Emergency · Resus", "OPD · Consultation"
-    "mrn": string,             // "MRN — pending" if not stated
-    "statusLabel": "Emergency" | "Urgent" | "Routine" | "Stable"
-  }},
-  "diagnosis": {{
-    "name": string,
-    "confidence": number,      // 0-100, honest — thin history means low confidence
-    "urgency": "Critical" | "High" | "Moderate" | "Routine",
-    "severity": "Severe" | "Moderate" | "Mild",
-    "reasoning": string        // 1-2 sentences
-  }},
-  "differentials": [           // 3-5, ranked most→least likely
-    {{ "name": string, "confidence": number, "note": string }}
-    // FIRST entry must be the primary diagnosis with the same confidence.
-    // Always retain "can't miss" diagnoses even at low confidence.
-    // "note" = ONE short line of what supports or argues against it.
-  ],
-  "investigations": [          // 3-5, ordered by clinical priority
-    {{
-      "name": string,
-      "priority": "Immediate" | "High" | "Medium" | "Low",
-      "reason": string,        // SHORT
-      "cost": string | null    // rough indicative figure like "$40", or null
-    }}
-  ],
-  "redFlags": [                // 0-4. Do NOT manufacture these when none are present.
-    {{
-      "text": string,
-      "level": "emergency" | "warning" | "contraindication"
-      // emergency = demands immediate escalation
-      // warning = deterioration risk to monitor
-      // contraindication = allergy/interaction/comorbidity constraining treatment
-    }}
-  ],
-  "followUps": [ string ],     // 4-6 questions to put to the PATIENT, each ending in "?"
-  "soap": {{
-    "s": string,               // history, clinical shorthand
-    "o": string,               // ONLY vitals/findings actually stated — never invent values
-    "a": string,               // working diagnosis + confidence + key differentials
-    "p": string                // investigations, treatment, referrals, safety-netting
-  }},
-  "references": [              // 2-4 guidelines you are confident exist
-    {{ "source": string, "title": string, "meta": string, "relevance": number }}
-    // source = NICE/WHO/WSES/ESC/AHA/ADA/BTS/SIGN/Cochrane/PubMed
-    // meta = "Publisher · Year"; relevance = 0-100 for THIS presentation
-  ]
-}}
+STRICT OUTPUT RULES — violating these breaks the application:
+- Valid RFC 8259 JSON only.
+- NO comments of any kind (no `//`, no `/* */`).
+- NO trailing commas.
+- NO markdown code fence, no prose before or after the object.
+- Every key below must be present. Use `[]` for an empty list and `null` only where
+  explicitly allowed. Keep strings on a single line.
+
+Field rules:
+- patient — only what the text supports. `age` 0 and strings "—" when unknown. Never
+  invent a name, MRN or vital sign. `chiefComplaint` is a short clinical phrase.
+  `statusLabel` is one of: Emergency, Urgent, Routine, Stable.
+- diagnosis — `confidence` 0-100 and honest; thin history means low confidence.
+  `urgency` one of: Critical, High, Moderate, Routine.
+  `severity` one of: Severe, Moderate, Mild. `reasoning` is 1-2 sentences.
+- differentials — 3 to 5 entries, ranked most to least likely. The FIRST entry is the
+  primary diagnosis with the same confidence value. Always keep "can't miss" diagnoses
+  even at low confidence. `note` is ONE short line of supporting or opposing evidence.
+- investigations — 3 to 5, ordered by clinical priority.
+  `priority` one of: Immediate, High, Medium, Low. `reason` is short.
+  `cost` is a rough figure like "$40", or null.
+- redFlags — 0 to 4. Do NOT manufacture these when none are present.
+  `level` one of: emergency (immediate escalation), warning (deterioration risk),
+  contraindication (allergy/interaction/comorbidity constraining treatment).
+- followUps — 4 to 6 questions to put to the PATIENT, each ending in "?".
+- soap — plain text, no markdown. `o` contains ONLY vitals and findings actually
+  stated; never invent values.
+- references — 2 to 4 guidelines you are confident exist. `source` is the body
+  (NICE, WHO, WSES, ESC, AHA, ADA, BTS, SIGN, Cochrane, PubMed).
+  `meta` is "Publisher · Year". `relevance` is 0-100 for THIS presentation.
+
+Use exactly this shape:
+
+{{"patient":{{"name":"","age":0,"gender":"","weight":"","height":"","bloodGroup":"","chiefComplaint":"","visitType":"","mrn":"","statusLabel":"Routine"}},"diagnosis":{{"name":"","confidence":0,"urgency":"Routine","severity":"Mild","reasoning":""}},"differentials":[{{"name":"","confidence":0,"note":""}}],"investigations":[{{"name":"","priority":"Medium","reason":"","cost":null}}],"redFlags":[{{"text":"","level":"warning"}}],"followUps":[""],"soap":{{"s":"","o":"","a":"","p":""}},"references":[{{"source":"","title":"","meta":"","relevance":0}}]}}
 """
 )

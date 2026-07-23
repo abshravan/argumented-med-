@@ -168,13 +168,22 @@ def parse(state: ClinicalState) -> dict:
     result: dict = {"assessment": narrative.strip()}
 
     if not tail.strip():
-        log.warning("model response contained no %s block", prompts.DELIMITER)
+        log.warning(
+            "model response contained no %s block (response was %d chars)",
+            prompts.DELIMITER,
+            len(raw),
+        )
         return result
 
     try:
         data = extract_json(tail)
     except Exception as exc:
-        log.warning("could not parse insights JSON: %s", exc)
+        # Log enough to diagnose which part of the JSON the model got wrong.
+        log.warning(
+            "could not parse insights JSON: %s\n--- tail (first 600 chars) ---\n%s\n--- end ---",
+            exc,
+            tail.strip()[:600],
+        )
         return result
 
     if not isinstance(data, dict):

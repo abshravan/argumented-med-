@@ -129,6 +129,11 @@ const SRC: Record<string, { c: string; bg: string }> = {
   Radiology: { c: "#93c5fd", bg: "rgba(59,130,246,0.14)" },
 };
 
+/** Shown when a card has resolved but the model returned nothing for it. */
+function Empty({ text }: { text: string }) {
+  return <div style={{ fontSize: 12.5, color: "var(--text-dim)", lineHeight: 1.5 }}>{text}</div>;
+}
+
 function Badge({ text, map }: { text: string; map: Record<string, { c: string; bg: string }> }) {
   const s = map[text] || { c: "var(--text-muted)", bg: "rgba(148,163,184,0.1)" };
   return (
@@ -189,7 +194,16 @@ export default function InsightsPanel({
       {/* scroll body */}
       <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
         {/* Most Likely Diagnosis */}
-        <InsightCard icon={Target} iconColor="#b794f6" title="Most Likely Diagnosis" revealed={revealed.diagnosis && !!dx} streaming={streaming} skeletonRows={3} beam>
+        <InsightCard
+          icon={Target}
+          iconColor="#b794f6"
+          title="Most Likely Diagnosis"
+          revealed={revealed.diagnosis}
+          streaming={streaming}
+          skeletonRows={3}
+          beam={!!dx}
+        >
+          {!dx && <Empty text="No working diagnosis yet — add history or examination findings." />}
 
           {dx && (
             <>
@@ -219,6 +233,7 @@ export default function InsightsPanel({
         {/* Differential Diagnoses */}
         <InsightCard icon={ListOrdered} iconColor="#5b9bff" title="Differential Diagnoses" revealed={revealed.differentials} streaming={streaming} skeletonRows={4}>
           <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+            {insights.differentials.length === 0 && <Empty text="No differentials ranked yet." />}
             {insights.differentials.map((d, i) => (
               <div key={d.name} style={{ transition: "all 0.4s var(--ease)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
@@ -254,6 +269,7 @@ export default function InsightsPanel({
           }
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {insights.investigations.length === 0 && <Empty text="No investigations suggested yet." />}
             {insights.investigations.map((inv) => (
               <div key={inv.name}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -305,6 +321,7 @@ export default function InsightsPanel({
         {/* Suggested Follow-up Questions */}
         <InsightCard icon={HelpCircle} iconColor="#7dd3fc" title="Suggested Follow-up Questions" revealed={revealed.followups} streaming={streaming} skeletonRows={3}>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {insights.followUps.length === 0 && <Empty text="No follow-up questions suggested yet." />}
             {insights.followUps.map((q, i) => (
               <button
                 key={i}
@@ -381,6 +398,7 @@ export default function InsightsPanel({
         {/* References */}
         <InsightCard icon={BookMarked} iconColor="#c4b5fd" title="References" revealed={revealed.references} streaming={streaming} skeletonRows={3}>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {insights.references.length === 0 && <Empty text="No references cited yet." />}
             {insights.references.map((r, i) => (
               <div key={i} style={{ padding: "11px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card-2)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
