@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from functools import lru_cache
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -37,8 +38,18 @@ class Settings:
     openrouter_app_name: str = os.getenv("OPENROUTER_APP_NAME", "MediAssist Clinical Workspace")
 
     temperature: float = float(os.getenv("TEMPERATURE", "0.2"))
-    # One call returns narrative + the full insights JSON, so this needs headroom.
-    max_output_tokens: int = int(os.getenv("MAX_OUTPUT_TOKENS", "3500"))
+    # One call returns narrative + the full insights JSON. On *thinking* models
+    # (Gemini 2.5/3.x) this budget also covers reasoning tokens, so it needs to be
+    # generous — too low and the model stops before writing the JSON block.
+    max_output_tokens: int = int(os.getenv("MAX_OUTPUT_TOKENS", "8192"))
+
+    #: Gemini thinking budget. 0 disables reasoning (fastest, leaves the whole
+    #: budget for output). Empty = leave the model default alone.
+    gemini_thinking_budget: Optional[int] = (
+        int(os.getenv("GEMINI_THINKING_BUDGET"))
+        if os.getenv("GEMINI_THINKING_BUDGET", "").strip()
+        else None
+    )
 
     #: Attempts against the primary model before falling back (transient errors only).
     max_retries: int = int(os.getenv("LLM_MAX_RETRIES", "2"))

@@ -42,13 +42,23 @@ def build_llm(
             )
         from langchain_google_genai import ChatGoogleGenerativeAI
 
-        return ChatGoogleGenerativeAI(
+        kwargs: dict[str, Any] = dict(
             model=model or settings.gemini_model,
             google_api_key=settings.google_api_key,
             temperature=temperature,
             max_output_tokens=settings.max_output_tokens,
             disable_streaming=not streaming,
         )
+        # Thinking models spend part of max_output_tokens on reasoning. Capping the
+        # budget leaves room for the actual answer. Older SDKs reject the kwarg.
+        if settings.gemini_thinking_budget is not None:
+            try:
+                return ChatGoogleGenerativeAI(
+                    **kwargs, thinking_budget=settings.gemini_thinking_budget
+                )
+            except TypeError:
+                pass
+        return ChatGoogleGenerativeAI(**kwargs)
 
     if provider == "openrouter":
         if not settings.openrouter_api_key:

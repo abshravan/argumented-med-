@@ -251,6 +251,10 @@ async def consult_stream(req: ConsultRequest) -> StreamingResponse:
                             # Tiny gap so the panel animates card by card. No extra cost.
                             await asyncio.sleep(0.12)
 
+                    # Explain an empty panel rather than leaving the clinician guessing.
+                    if update.get("notice"):
+                        yield _sse("error", {"message": update["notice"]})
+
             # No delimiter arrived (model ignored the format) — flush what's left so
             # the clinician still sees the answer.
             if not narrative_done and len(buffer) > emitted:

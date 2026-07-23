@@ -97,14 +97,17 @@ async def consult(state: ClinicalState) -> dict:
                 temperature=state.get("temperature"),
                 streaming=True,
             )
+            finish_reason = ""
             async for chunk in llm.astream(messages):
                 text = _chunk_text(chunk.content)
                 if text:
                     parts.append(text)
+                meta = getattr(chunk, "response_metadata", None) or {}
+                finish_reason = meta.get("finish_reason") or finish_reason
 
             if attempt:
                 log.info("consult succeeded on attempt %d using %s", attempt + 1, model)
-            return {"raw": "".join(parts)}
+            return {"raw": "".join(parts), "finish_reason": str(finish_reason)}
 
         except asyncio.CancelledError:
             raise  # client disconnected — don't swallow
@@ -161,17 +164,44 @@ def _coerce_list(model: type[BaseModel], value: Any) -> list:
 
 
 def parse(state: ClinicalState) -> dict:
-    """Split the single response into narrative + structured insights. No LLM call."""
+    """Split the single response into narrative + structured insights. No LLM call.
+
+    Always returns the full key set — even on failure — so the UI's insight cards
+    resolve instead of showing skeleton loaders forever.
+    """
     raw = state.get("raw", "")
+    finish_reason = (state.get("finish_reason") or "").upper()
     narrative, _, tail = raw.partition(prompts.DELIMITER)
 
-    result: dict = {"assessment": narrative.strip()}
+    # Safe defaults for every card.
+    result: dict = {
+        "assessment": narrative.strip(),
+        "diagnosis": None,
+        "differentials": [],
+        "investigations": [],
+        "redFlags": [],
+        "followUps": [],
+        "soap": Soap(),
+        "references": [],
+        "notice": "",
+    }
+
+    truncated = finish_reason in {"MAX_TOKENS", "LENGTH"}
 
     if not tail.strip():
         log.warning(
-            "model response contained no %s block (response was %d chars)",
+            "model response contained no %s block (response was %d chars, finish_reason=%s)",
             prompts.DELIMITER,
             len(raw),
+            finish_reason or "unknown",
+        )
+        result["notice"] = (
+            "The model stopped before producing the insights block — its output limit was "
+            "reached. Raise MAX_OUTPUT_TOKENS in backend/.env, or set GEMINI_THINKING_BUDGET=0 "
+            "(thinking models spend that budget on reasoning)."
+            if truncated
+            else "The model replied without the insights block, so the panel is empty. "
+            "Try again, or switch model in Settings."
         )
         return result
 
@@ -180,13 +210,22 @@ def parse(state: ClinicalState) -> dict:
     except Exception as exc:
         # Log enough to diagnose which part of the JSON the model got wrong.
         log.warning(
-            "could not parse insights JSON: %s\n--- tail (first 600 chars) ---\n%s\n--- end ---",
+            "could not parse insights JSON (finish_reason=%s): %s\n"
+            "--- tail (first 600 chars) ---\n%s\n--- end ---",
+            finish_reason or "unknown",
             exc,
             tail.strip()[:600],
+        )
+        result["notice"] = (
+            "The insights JSON was cut off by the model's output limit. Raise "
+            "MAX_OUTPUT_TOKENS in backend/.env."
+            if truncated
+            else "The model returned malformed insights JSON, so the panel is empty."
         )
         return result
 
     if not isinstance(data, dict):
+        result["notice"] = "The model returned an unexpected insights shape."
         return result
 
     patient = _coerce(PatientSummary, data.get("patient"))

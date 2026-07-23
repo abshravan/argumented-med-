@@ -77,6 +77,26 @@ event: error    data: {"message": "..."}
 event: done     data: {}
 ```
 
+## Thinking models (Gemini 2.5 / 3.x)
+
+On thinking models `MAX_OUTPUT_TOKENS` covers **reasoning tokens as well as the answer**.
+Set it too low and the model spends the budget thinking, then stops before writing PART 2 —
+the log shows:
+
+```
+model response contained no ---INSIGHTS--- block (response was 438 chars, finish_reason=MAX_TOKENS)
+```
+
+Two fixes, both in `backend/.env`:
+
+```bash
+GEMINI_THINKING_BUDGET=0   # spend nothing on reasoning (recommended here)
+MAX_OUTPUT_TOKENS=8192     # and give the answer plenty of room
+```
+
+`finish_reason` is captured from the stream, so truncation is reported explicitly rather
+than showing up as mysteriously empty insight cards.
+
 ## When the provider fails
 
 Google returns `503 UNAVAILABLE — "This model is currently experiencing high demand"`

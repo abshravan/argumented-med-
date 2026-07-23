@@ -33,6 +33,12 @@ class ClinicalState(TypedDict, total=False):
     raw: str
     """The complete single-call response: narrative + delimiter + insights JSON."""
 
+    finish_reason: str
+    """Provider stop reason — MAX_TOKENS means the response was truncated."""
+
+    notice: str
+    """Human-readable explanation when the insights could not be produced."""
+
     patient: PatientSummary
     assessment: str
     """The narrative markdown answer streamed into the conversation."""
