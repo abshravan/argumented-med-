@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel
 
 from ..config import get_settings
@@ -65,7 +66,7 @@ class ModelUnavailable(RuntimeError):
     """All attempts failed. Carries a message safe to show in the UI."""
 
 
-async def consult(state: ClinicalState) -> dict:
+async def consult(state: ClinicalState, config: RunnableConfig) -> dict:
     """The single LLM call, with retry + model fallback on transient provider errors.
 
     Providers return 503 "high demand" fairly often on popular models. We retry the
@@ -74,6 +75,11 @@ async def consult(state: ClinicalState) -> dict:
     Retrying is only safe *before* any token has been emitted — LangGraph forwards
     tokens to the client as they arrive, so restarting mid-stream would duplicate
     text. If a failure happens after partial output we keep what we have.
+
+    NOTE: ``config`` MUST be forwarded to ``astream``. On Python <= 3.10 LangChain
+    cannot propagate the callback manager through contextvars, so without it
+    ``stream_mode="messages"`` receives no tokens and the chat stays empty while the
+    insights panel still fills in.
     """
     settings = get_settings()
     provider = (state.get("provider") or settings.provider or "gemini").lower()
@@ -105,7 +111,7 @@ async def consult(state: ClinicalState) -> dict:
                 allow_thinking_budget=allow_thinking_budget,
             )
             finish_reason = ""
-            async for chunk in llm.astream(messages):
+            async for chunk in llm.astream(messages, config=config):
                 text = _chunk_text(chunk.content)
                 if text:
                     parts.append(text)

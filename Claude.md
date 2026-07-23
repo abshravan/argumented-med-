@@ -21,6 +21,9 @@ then `uvicorn app.main:app --reload --port 8000`. See `backend/README.md`.
 - SSE from `/api/consult/stream`: `token` frames = narrative only (main.py buffers and
   suppresses the JSON tail, holding back partial delimiters), `insight` frames replay the
   card groups with a small gap for the staged reveal.
+- **`consult(state, config)` must forward `config` to `llm.astream()`** — on Python ≤3.10
+  callbacks don't propagate via contextvars, so `stream_mode="messages"` yields no tokens
+  and the chat renders empty while insights still populate.
 - Frontend also guards concurrency: `dispatch`/`regenerate` bail when `streaming`, and the
   composer/follow-up buttons lock during a request.
 

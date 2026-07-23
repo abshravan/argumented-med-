@@ -242,6 +242,16 @@ async def consult_stream(req: ConsultRequest) -> StreamingResponse:
                     update = (chunk or {}).get("parse")
                     if not isinstance(update, dict):
                         continue
+
+                    # Safety net: if token streaming produced nothing (e.g. callbacks
+                    # didn't propagate), send the assessment in one frame so the chat
+                    # is never left empty while the insights panel fills in.
+                    if emitted == 0 and update.get("assessment"):
+                        log.warning("no tokens streamed — emitting assessment as one frame")
+                        yield _sse("token", {"text": update["assessment"]})
+                        emitted = len(update["assessment"])
+                        narrative_done = True
+
                     for node, keys in INSIGHT_GROUPS:
                         payload = {
                             key: _jsonable(update[key]) for key in keys if key in update

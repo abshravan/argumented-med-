@@ -51,8 +51,14 @@ START → consult → parse → END
   independently, and returns the insight cards. A malformed section is dropped rather than
   failing the whole response; if the delimiter never appears, the narrative is still shown.
 
+> **Python ≤ 3.10:** `consult` takes `config: RunnableConfig` and forwards it to
+> `llm.astream(..., config=config)`. Without this, LangChain can't propagate the callback
+> manager through contextvars, `stream_mode="messages"` receives no tokens, and the chat
+> stays empty while the insights panel still fills in. Don't remove it.
+
 The SSE layer buffers tokens and holds back anything that could be a partial delimiter, so
-the raw JSON never leaks into the conversation. Insight frames are then replayed group by
+the raw JSON never leaks into the conversation. If no tokens arrive at all, it falls back to
+sending the parsed assessment in a single frame. Insight frames are then replayed group by
 group with a ~120 ms gap so the panel still animates card by card — at no extra API cost.
 
 > An earlier version fanned out to five parallel LLM nodes plus `intake` and `assess`.
